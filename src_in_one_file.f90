@@ -24,6 +24,8 @@ module constants
   implicit none
   !real(p_),parameter:: coulomb_log=15._p_ !assumed to be a constant
   real(p_),parameter:: kev=1.6022d-16   !unit J
+  real(p_),parameter:: Mev=1.6022d-13   !unit J
+  real(p_),parameter:: MW=10**6   !unit J
   real(p_),parameter:: elementary_charge=1.6022d-19   !unit C
   real(p_),parameter:: electron_mass=9.1094d-31 !in unit of kg
   real(p_),parameter:: epsilon0=8.8542d-12 !Permittivity of free space 
@@ -126,7 +128,8 @@ module rmp_coils
   integer :: upp_down_phase  !chosen among values: 0,1,2,3,4,5,6,7
   real(p_):: rmp_current_amplitude
   integer:: rmp_nh
-  logical, parameter :: is_ripple=.true.  
+  logical, parameter :: is_ripple=.false.
+  integer,parameter :: nripple=16
 end module rmp_coils
 
 module  rmp_3d_field
@@ -183,7 +186,7 @@ module radial_module
   real(p_):: r_axis,z_axis,baxis
   real(p_):: psi_axis,psi_lcfs
   integer:: sign_bphi !sign of the toroidal component of the magnetic field
-  integer,parameter:: nflux=100
+  integer,parameter:: nflux=50
   !real(p_),parameter:: pfn_inner=0.005_p_, pfn_bdry=0.99_p_
   real(p_),parameter:: pfn_inner=0.0_p_, pfn_bdry=1.0_p_
   real(p_):: psi_array(nflux), pfn(nflux), circumference(nflux)
@@ -219,7 +222,8 @@ module magnetic_coordinates
   use constants,only:p_, pi, twopi
   use radial_module, only : nflux, pfn
   implicit none
-  real(p_),dimension(:,:),allocatable :: r_mag_surf, z_mag_surf, jacobian
+  real(p_),dimension(:,:),allocatable :: r_mag_surf, z_mag_surf
+  real(p_),dimension(:,:),allocatable :: jacobian
   real(p_), dimension(:), allocatable :: theta
   real(p_) :: dtheta
   integer :: mpoloidal
@@ -281,7 +285,7 @@ module background_plasma
   implicit none
 
   !  real(p_),parameter:: ti=2._p_*kev
-    real(p_),parameter:: mi=2.0_p_*1.6726d-27 !particle mass in kg (mass=2._p_*1.6726d-27 is for Deuterium)
+  !  real(p_),parameter:: mi=2.0_p_*1.6726d-27 !particle mass in kg (mass=2._p_*1.6726d-27 is for Deuterium)
   !  real(p_),parameter:: vti=sqrt(two*ti/mi)
   real(p_) :: zeff
   !  real(p_),parameter:: zi=1._p_
@@ -300,6 +304,67 @@ module cross_section_interpolate
   real(p_):: te_array(ndata_te),sigma_ve_averaged(ndata_te),coeff_electron_impact(ndata_te)
 end module cross_section_interpolate
 
+
+
+module rzphi_grid
+ use constants,only:p_, twopi
+ implicit none
+  integer,parameter:: mr=50,mz=50, mphi=50
+  real(p_):: rgrid(mr),zgrid(mz),phigrid(mphi),dr,dz,dphi
+  real(p_) :: dvol(mr,mz)
+contains
+  subroutine set_rzphi_grid()
+    use boundary, only : rlim, zlim
+    integer:: i,j,k, u
+    real(p_):: r_left,r_right,z_bot,z_top
+
+    r_left=minval(rlim)
+    r_right=maxval(rlim)
+    z_bot=minval(zlim)
+    z_top=maxval(zlim)
+
+    dr=(r_right-r_left)/(mr-1)
+    do i=1,mr
+       rgrid(i)=r_left+dr*(i-1)
+    enddo
+
+    dz=(z_top-z_bot)/(mz-1)
+    do j=1,mz
+       zgrid(j)=z_bot+dz*(j-1)
+    enddo
+
+    dphi=twopi/(mphi-1)
+    do j=1, mphi
+       phigrid(j)=0+dphi*(j-1)
+    enddo
+
+    do i=1,mr
+       do j=1,mz
+          dvol(i,j)=rgrid(i)*dr*dz*twopi
+       enddo
+    enddo
+
+  end subroutine set_rzphi_grid
+end module rzphi_grid
+
+
+!!$module pphi_lambda_grid
+!!$  use constants, only : p_
+!!$  implicit none
+!!$  integer,parameter:: mpphi=50,mlambda=50
+!!$  real(p_):: pphi_grid(mpphi),lambda_grid(mlambda)
+!!$
+!!$contains
+!!$  subroutine set_pphi_lambda_grid()
+!!$   integer:: i,j
+!!$    real(p_):: xleft, xright, yleft, yright
+!!$
+!!$
+!!$   
+!!$  end subroutine set_pphi_lambda_grid
+!!$
+!!$
+!!$end module pphi_lambda_grid
 !>>>PNP1                                                                
 !       http://www.ecse.rpi.edu/Homepages/wrf/Research/Short_Notes/pnpoly.html                                                                
 !     ..................................................................
@@ -357,18 +422,10 @@ contains
     real(p_),intent(in):: px,py
     REAL(p_),intent(in):: XX(N),YY(N)                                    
     integer:: i,j,maxdim
-    REAL(p_):: X(200),Y(200), tmp
+    REAL(p_):: X(n),Y(n), tmp
     LOGICAL MX,MY,NX,NY                                               
-    !      INTEGER O                                                         
-    !      OUTPUT UNIT FOR PRINTED MESSAGES                                 
-    !      DATA O/6/                                                         
 
-    MAXDIM=200                                                        
-    IF(N.LE.MAXDIM)GO TO 6                                            
-    !      WRITE(O,7)                                                        
-7   FORMAT('0WARNING:',I5,' TOO GREAT FOR THIS VERSION OF PNPOLY. RESULTS INVALID')     
-    RETURN                                                            
-6   DO  I=1,N                                                        
+    DO  I=1,N                                                        
        X(I)=XX(I)-PX                                                     
        Y(I)=YY(I)-PY
     enddo
@@ -402,60 +459,99 @@ contains
 5      INOUT=-INOUT                                                      
 2      CONTINUE                                                          
      END SUBROUTINE
+
+     
    end module
 module math
 contains
 
-subroutine partial_derivatives_2d(nx,nz,rarray,zarray,b,b_x,b_z)
-  use precision,only:p_
+ pure subroutine shift_to_specified_toroidal_range(a) !shift "a" into the range [0:toroidal_range]
+  use constants,only: p_, twopi
   implicit none
-  integer,intent(in):: nx,nz
-  real(p_),intent(in):: rarray(nx),zarray(nz),b(nx,nz)
-  real(p_),intent(out):: b_x(nx,nz),b_z(nx,nz)
-  integer:: i,j,i1,j1,i2,j2
+  real(p_),intent(inout):: a
+  integer:: ishift
+    real(p_),parameter :: toroidal_range=twopi
 
-  do i=1,nx
-     do j=1,nz
-           i2=i+1
-           i1=i-1
-           j2=j+1
-           j1=j-1
-           if(i.eq.1) i1=i
-           if(j.eq.1) j1=j
-           if(i.eq.nx) i2=i
-           if(j.eq.nz) j2=j
-           b_x(i,j)=(b(i2,j)-b(i1,j))/(rarray(i2)-rarray(i1))
-           b_z(i,j)=(b(i,j2)-b(i,j1))/(zarray(j2)-zarray(j1))
-     enddo
-  end do
-end subroutine partial_derivatives_2d
+ ishift=floor(a/toroidal_range)
+ a=a-ishift*toroidal_range
+
+end subroutine shift_to_specified_toroidal_range
+
+ pure function phi_principal(phi) result(z)
+    use constants,only: p_, twopi
+    implicit none
+    real(p_),intent(in):: phi
+    real(p_) :: z
+    real(p_),parameter :: toroidal_range=twopi
+
+    z = mod(phi,toroidal_range)
+    if(z<0) z = z + toroidal_range
+
+  end function phi_principal
 
 
-subroutine laplace_cylindrical2d(psi, x, z, nx, nz, jphi)
-!  use math, only : partial_derivatives_2d
-  use constants, only : p_, mu0
-  implicit none
-  integer, intent(in) :: nx, nz
-  real(p_), intent(in) :: psi(nx,nz),  x(nx), z(nz)
-  real(p_), intent(out) :: jphi(nx,nz)
-  real(p_) :: psi_x(nx,nz), psi_z(nx,nz), psi_xx(nx,nz), psi_xz(nx,nz), psi_zx(nx,nz),psi_zz(nx,nz)
-  real(p_) :: dx, dz
-  integer :: i, j  
+  
+  subroutine grow_array(a, n) !keep the data in a untouched and grow its size
+    use constants, only : p_
+    implicit none
+    real(p_), intent(inout), allocatable :: a(:)
+    integer, intent(in) :: n
+    real(p_), allocatable :: tmp(:)
+    allocate(tmp(n))
+    tmp(1:size(a)) = a(:)
+    call move_alloc(tmp, a)  !equivalent to `a=tmp; deallocate(tmp)`, but is more efficient since no data copying is involved (only descriptor copying is involved)
+  end subroutine grow_array
 
-  dx = x(2) - x(1)
-  dz = z(2) - z(1)
-  call partial_derivatives_2d(nx,nz,x,z, psi,   psi_x,  psi_z)
-  call partial_derivatives_2d(nx,nz,x,z, psi_x, psi_xx, psi_xz)
-  call partial_derivatives_2d(nx,nz,x,z, psi_z, psi_zx, psi_zz)
+  subroutine partial_derivatives_2d(nx,nz,rarray,zarray,b,b_x,b_z)
+    use precision,only:p_
+    implicit none
+    integer,intent(in):: nx,nz
+    real(p_),intent(in):: rarray(nx),zarray(nz),b(nx,nz)
+    real(p_),intent(out):: b_x(nx,nz),b_z(nx,nz)
+    integer:: i,j,i1,j1,i2,j2
 
-  do i= 1, nx
-     do j=1,nz
-        jphi(i,j) = psi_zz(i,j) + psi_xx(i,j)  - 1/x(i)*psi_x(i,j)
-        jphi(i,j) = -jphi(i,j)/(mu0*x(i)) !to toroidal current density
-     enddo
-  enddo
+    do i=1,nx
+       do j=1,nz
+          i2=i+1
+          i1=i-1
+          j2=j+1
+          j1=j-1
+          if(i.eq.1) i1=i
+          if(j.eq.1) j1=j
+          if(i.eq.nx) i2=i
+          if(j.eq.nz) j2=j
+          b_x(i,j)=(b(i2,j)-b(i1,j))/(rarray(i2)-rarray(i1))
+          b_z(i,j)=(b(i,j2)-b(i,j1))/(zarray(j2)-zarray(j1))
+       enddo
+    end do
+  end subroutine partial_derivatives_2d
 
-end subroutine laplace_cylindrical2d
+
+  subroutine laplace_cylindrical2d(psi, x, z, nx, nz, jphi)
+    !  use math, only : partial_derivatives_2d
+    use constants, only : p_, mu0
+    implicit none
+    integer, intent(in) :: nx, nz
+    real(p_), intent(in) :: psi(nx,nz),  x(nx), z(nz)
+    real(p_), intent(out) :: jphi(nx,nz)
+    real(p_) :: psi_x(nx,nz), psi_z(nx,nz), psi_xx(nx,nz), psi_xz(nx,nz), psi_zx(nx,nz),psi_zz(nx,nz)
+    real(p_) :: dx, dz
+    integer :: i, j  
+
+    dx = x(2) - x(1)
+    dz = z(2) - z(1)
+    call partial_derivatives_2d(nx,nz,x,z, psi,   psi_x,  psi_z)
+    call partial_derivatives_2d(nx,nz,x,z, psi_x, psi_xx, psi_xz)
+    call partial_derivatives_2d(nx,nz,x,z, psi_z, psi_zx, psi_zz)
+
+    do i= 1, nx
+       do j=1,nz
+          jphi(i,j) = psi_zz(i,j) + psi_xx(i,j)  - 1/x(i)*psi_x(i,j)
+          jphi(i,j) = -jphi(i,j)/(mu0*x(i)) !to toroidal current density
+       enddo
+    enddo
+
+  end subroutine laplace_cylindrical2d
 
 
 
@@ -473,6 +569,111 @@ end subroutine laplace_cylindrical2d
     a=a-ishift*twopi
 
   end subroutine shift_to_zero_twopi_range
+
+  real(p_) FUNCTION rtbis(func,x1,x2,xacc,xmaxis,zmaxis,slope,psival) !binary-section mehtod of root searching
+    use precision,only: p_
+    implicit none
+    REAL(p_) :: x1,x2,xacc,xmaxis,zmaxis,slope,psival
+    !      real(p_), EXTERNAL :: func
+    integer, PARAMETER :: JMAX=40
+    INTEGER j
+    REAL(p_) dx,f,fmid,xmid
+
+    interface
+       pure real(p_) function func(x_axis,z_axis,slope,psival,x) 
+         use precision,only: p_
+         implicit none
+         real(p_),intent(in):: x_axis,z_axis,slope,psival,x
+       end function func
+    end interface
+
+    fmid=func(xmaxis,zmaxis,slope,psival,x2)
+    f=   func(xmaxis,zmaxis,slope,psival,x1)
+    !     write(*,*) 'f1=', f, 'f2=',fmid
+    if(f*fmid.ge.0.) stop 'root must be bracketed in rtbis'
+    if(f.lt.0.)then
+       rtbis=x1
+       dx=x2-x1
+    else
+       rtbis=x2
+       dx=x1-x2
+    endif
+    do  j=1,JMAX
+       dx=dx*.5
+       xmid=rtbis+dx
+       fmid=func(xmaxis,zmaxis,slope,psival,xmid)
+       if(fmid.le.0.)rtbis=xmid
+       if(abs(dx).lt.xacc .or. fmid.eq.0.) then
+          !write(*,*) 'in rtbis j=',j
+          return
+       endif
+    enddo
+    stop 'too many bisections in rtbis'
+  END FUNCTION rtbis
+
+
+
+  FUNCTION rtbis2(func,x1,x2,xacc,nx,psival_nx,qpsi_nx,tmp_y2)
+    use precision,only:p_
+    implicit none
+    INTEGER JMAX
+    REAL(p_) rtbis2,x1,x2,xacc,func
+    EXTERNAL func
+    PARAMETER (JMAX=100)
+    INTEGER j
+    REAL(p_) dx,f,fmid,xmid
+    integer,intent(in):: nx
+    real(p_),intent(in):: psival_nx(nx),qpsi_nx(nx), tmp_y2(nx)
+    fmid=func(x2,nx,psival_nx,qpsi_nx,tmp_y2)
+    f=func(x1,nx,psival_nx,qpsi_nx,tmp_y2)
+    if(f*fmid.ge.0.) stop 'root must be bracketed in rtbis2'
+    if(f.lt.0.)then
+       rtbis2=x1
+       dx=x2-x1
+    else
+       rtbis2=x2
+       dx=x1-x2
+    endif
+    do  j=1,JMAX
+       dx=dx*.5
+       xmid=rtbis2+dx
+       fmid=func(xmid,nx,psival_nx,qpsi_nx,tmp_y2)
+       if(fmid.le.0.)rtbis2=xmid
+       if(abs(dx).lt.xacc .or. fmid.eq.0.) return
+    enddo
+    stop 'too many bisections in rtbis2'
+  END FUNCTION rtbis2
+
+
+  FUNCTION rtbis0(func,x1,x2,xacc)
+    use precision,only:p_
+    implicit none
+    INTEGER JMAX
+    REAL(p_) rtbis0,x1,x2,xacc,func
+    EXTERNAL func
+    PARAMETER (JMAX=100)
+    INTEGER j
+    REAL(p_) dx,f,fmid,xmid
+    fmid=func(x2)
+    f=func(x1)
+    if(f*fmid.ge.0.) stop 'root must be bracketed in rtbis0'
+    if(f.lt.0.)then
+       rtbis0=x1
+       dx=x2-x1
+    else
+       rtbis0=x2
+       dx=x1-x2
+    endif
+    do  j=1,JMAX
+       dx=dx*.5
+       xmid=rtbis0+dx
+       fmid=func(xmid)
+       if(fmid.le.0.)rtbis0=xmid
+       if(abs(dx).lt.xacc .or. fmid.eq.0.) return
+    enddo
+    stop 'too many bisections in rtbis0'
+  END FUNCTION rtbis0
+
 end module math
 module interpolate_mod
 contains
@@ -2273,113 +2474,6 @@ contains
     ansy12=ansy12/(h1*h2)
   END SUBROUTINE bcuint0
 end module cubic_interpolate
-module rtbis_mod
-  contains
-real(p_) FUNCTION rtbis(func,x1,x2,xacc,xmaxis,zmaxis,slope,psival) !binary-section mehtod of root searching
-      use precision,only: p_
-      implicit none
-      REAL(p_) :: x1,x2,xacc,xmaxis,zmaxis,slope,psival
-!      real(p_), EXTERNAL :: func
-      integer, PARAMETER :: JMAX=40
-      INTEGER j
-      REAL(p_) dx,f,fmid,xmid
-
-      interface
-            pure real(p_) function func(x_axis,z_axis,slope,psival,x) 
-              use precision,only: p_
-              implicit none
-              real(p_),intent(in):: x_axis,z_axis,slope,psival,x
-            end function func
-        end interface
-
-      fmid=func(xmaxis,zmaxis,slope,psival,x2)
-      f=   func(xmaxis,zmaxis,slope,psival,x1)
-!     write(*,*) 'f1=', f, 'f2=',fmid
-      if(f*fmid.ge.0.) stop 'root must be bracketed in rtbis'
-      if(f.lt.0.)then
-         rtbis=x1
-         dx=x2-x1
-      else
-         rtbis=x2
-         dx=x1-x2
-      endif
-      do  j=1,JMAX
-         dx=dx*.5
-         xmid=rtbis+dx
-         fmid=func(xmaxis,zmaxis,slope,psival,xmid)
-         if(fmid.le.0.)rtbis=xmid
-         if(abs(dx).lt.xacc .or. fmid.eq.0.) then
-            !write(*,*) 'in rtbis j=',j
-            return
-         endif
-      enddo
-      stop 'too many bisections in rtbis'
-    END FUNCTION rtbis
-
-
-
-      FUNCTION rtbis2(func,x1,x2,xacc,nx,psival_nx,qpsi_nx,tmp_y2)
-      use precision,only:p_
-      implicit none
-      INTEGER JMAX
-      REAL(p_) rtbis2,x1,x2,xacc,func
-      EXTERNAL func
-      PARAMETER (JMAX=100)
-      INTEGER j
-      REAL(p_) dx,f,fmid,xmid
-      integer,intent(in):: nx
-      real(p_),intent(in):: psival_nx(nx),qpsi_nx(nx), tmp_y2(nx)
-      fmid=func(x2,nx,psival_nx,qpsi_nx,tmp_y2)
-      f=func(x1,nx,psival_nx,qpsi_nx,tmp_y2)
-      if(f*fmid.ge.0.) stop 'root must be bracketed in rtbis2'
-      if(f.lt.0.)then
-         rtbis2=x1
-         dx=x2-x1
-      else
-         rtbis2=x2
-         dx=x1-x2
-      endif
-      do  j=1,JMAX
-         dx=dx*.5
-         xmid=rtbis2+dx
-         fmid=func(xmid,nx,psival_nx,qpsi_nx,tmp_y2)
-         if(fmid.le.0.)rtbis2=xmid
-         if(abs(dx).lt.xacc .or. fmid.eq.0.) return
-      enddo
-      stop 'too many bisections in rtbis2'
-    END FUNCTION rtbis2
-
-
-      FUNCTION rtbis0(func,x1,x2,xacc)
-      use precision,only:p_
-      implicit none
-      INTEGER JMAX
-      REAL(p_) rtbis0,x1,x2,xacc,func
-      EXTERNAL func
-      PARAMETER (JMAX=100)
-      INTEGER j
-      REAL(p_) dx,f,fmid,xmid
-      fmid=func(x2)
-      f=func(x1)
-      if(f*fmid.ge.0.) stop 'root must be bracketed in rtbis0'
-      if(f.lt.0.)then
-        rtbis0=x1
-        dx=x2-x1
-      else
-        rtbis0=x2
-        dx=x1-x2
-      endif
-      do  j=1,JMAX
-        dx=dx*.5
-        xmid=rtbis0+dx
-        fmid=func(xmid)
-        if(fmid.le.0.)rtbis0=xmid
-        if(abs(dx).lt.xacc .or. fmid.eq.0.) return
-enddo
-      stop 'too many bisections in rtbis0'
-    END FUNCTION rtbis0
-
-  end module rtbis_mod
 module read_gfile_mod
 contains
   subroutine read_gfile(gfile_name)
@@ -2396,11 +2490,11 @@ contains
     character(len=8):: ntitle(5),vid
     integer:: neq,ipestg
     real(p_)::xdim, zdim, rmajor_mk, rleft, zmid
-    real(p_)::  btorus
+    real(p_)::  btorus, ip_scaling_factor
     real(p_):: dumaraya4(4),dumarayb5(5)
     integer:: i,j, u
 
-    namelist /equilibrium_scaling/reverse_tf,reverse_ip
+    namelist /equilibrium_scaling/reverse_tf,reverse_ip, ip_scaling_factor
 
 !!$  namelist/gfile_namelist/gfile_name
 !!$  open(11,file='input.nmlt')
@@ -2483,6 +2577,12 @@ contains
        pprime=-pprime
     endif
 
+    psi=ip_scaling_factor*psi
+    psi_axis=ip_scaling_factor*psi_axis
+    psi_lcfs=ip_scaling_factor*psi_lcfs
+    ffprime=ffprime/ip_scaling_factor
+    qpsi = qpsi/ip_scaling_factor
+    
     if(fpsi(1)>0) then 
        sign_bphi=1
        if(myid==0) write(*,*) 'bphi>0'
@@ -2516,9 +2616,10 @@ contains
     if(myid==0) then
        !write(*,*) 'xdim=',xdim, 'zdim=',zdim, 'rleft=',rleft, 'zmid=',zmid
        write(*,*) 'rleft=',rleft, 'rright=', rleft+xdim,'zlow=',zmid-zdim/2._p_,'zupp=',zmid+zdim/2._p_
-       write(*,*) 'magnetic location r_axis, z_axis=', r_axis, z_axis, 'baxis=', baxis
+       write(*,*) 'magnetic location (meter) (r,z)=', r_axis, z_axis
+       write(*,*) 'baxis (Tesla)=', baxis
        write(*,*) 'rcenter=',rmajor_mk, 'vacuum magnetic field at rcenter=',btorus
-       write(*,*)  'total current in all TF coils (Ampere)=', btorus*rmajor_mk/(2d-7) !Ampere's circuital law
+       write(*,*)  'total current in all TF coils (MegaAmpere)=', btorus*rmajor_mk/(2d-7)/10**6 !Ampere's circuital law
        write(*,*) 'psi_axis=',psi_axis,'psi_lcfs=',psi_lcfs
        write(*,*) 'np_lcfs=',np_lcfs
        !write(*,*) 'x_lcfs(1),z_lcfs(1),x_lcfs(np_lcfs),z_lcfs(np_lcfs)=', x_lcfs(1),z_lcfs(1),x_lcfs(np_lcfs),z_lcfs(np_lcfs)
@@ -2566,7 +2667,6 @@ contains
        enddo
        close(u)
        write(*,*) 'wall r_min=',minval(rlim), 'wall r_max=',maxval(rlim), 'wall z_min=',minval(zlim), 'wall z_max=',maxval(zlim)
-       write(*,*) 'baxis=',baxis
     endif
 
 
@@ -3332,7 +3432,7 @@ contains
     !these codes are drawn from subroutine calculate_contours() in the file calculate_contours.f90
     use precision,only:p_
     use constants,only:zero,one,two,twopi
-    use rtbis_mod, only : rtbis
+    use math, only : rtbis
     implicit none
     integer,intent(in):: np_lcfs
     real(p_),intent(in):: x_lcfs(np_lcfs),z_lcfs(np_lcfs),x_axis,z_axis,psival
@@ -3428,7 +3528,7 @@ subroutine mapping(r,z,radcor,theta)
   use radial_module,only:r_axis, z_axis, psi_axis, psi_lcfs
   use magnetic_field_functions1, only: psi_func
   use contour_mod, only : contour
-  use rtbis_mod, only :rtbis
+  use math, only :rtbis
   implicit none
   real(p_),intent(in):: r,z
   real(p_),intent(out):: radcor,theta
@@ -3868,6 +3968,8 @@ contains
     endif
   end subroutine plasma_volume_area0
 end module volume_mod
+
+
 module construct_mc_mod
 contains
   subroutine magnetic_surface_coordinates()
@@ -3876,16 +3978,17 @@ contains
     use boundary,only:x_lcfs,z_lcfs,np_lcfs
     use radial_module,only: r_axis,z_axis,psi_axis,psi_lcfs,nflux,psi_array,pfn, circumference, &
          & radial_coor_vol, total_volume, vol_int, create_psi_array, vol, pol_area
-    use magnetic_coordinates,only: r_mag_surf,z_mag_surf,jacobian, dtheta !output
+    use magnetic_coordinates,only: r_mag_surf,z_mag_surf,jacobian !output
+    use magnetic_coordinates,only: dtheta
     use contour_mod, only : contour
     use volume_mod, only : plasma_volume_area, plasma_volume_area0
     implicit none
     !  integer,intent(in):: nflux,np_lcfs
     !  real(p_),intent(in):: psival(nflux)
     !  real(p_),intent(out)::r_mag_surf(np_lcfs,nflux),z_mag_surf(np_lcfs,nflux)
-    real(p_):: dpsi, pfn_tmp
+    real(p_):: dpsi, pfn_tmp, dl(np_lcfs-1, nflux)
     integer:: i,j,u
-    real(p_) :: dl(np_lcfs-1, nflux)
+
 
     call create_psi_array()
     allocate(r_mag_surf(np_lcfs,nflux))
@@ -3916,27 +4019,32 @@ contains
     endif
 
     call compute_circumference(r_mag_surf, z_mag_surf, np_lcfs, nflux, circumference, dl)
-
+    if(myid==0) call safety_factor()
     call plasma_volume_area0(nflux, np_lcfs, r_mag_surf, z_mag_surf, vol, pol_area)
 
     call construct_poloidal_coordinate(myid, np_lcfs, nflux, x_lcfs, z_lcfs, r_mag_surf, z_mag_surf)
-    if(myid==0) then
-       open(newunit=u,file='theta_line.txt')
-       do i=1,np_lcfs
-          do j=1,nflux-1
-             write(u,*) r_mag_surf(i,j),z_mag_surf(i,j)
-          enddo
-          write(u,*)
-          write(u,*)
-       enddo
-       close(u)
-    endif
+
+    block !diagnostic
+      use magnetic_coordinates,only: theta
+      if(myid==0) then
+         open(newunit=u,file='theta_psi_rz_mapping.txt')
+         do i=1,np_lcfs
+            do j=1,nflux-1
+               write(u,*) theta(i), pfn(j), r_mag_surf(i,j), z_mag_surf(i,j)
+            enddo
+            write(u,*)
+            write(u,*)
+         enddo
+         close(u)
+      endif
+    endblock
+
     allocate(jacobian(np_lcfs,nflux))
 
     dpsi = psi_array(3)-psi_array(2) !!radial grid interval, uniform grid is assumed
     if(myid==0)  write(*,*) 'dtheta, dpsi=', dtheta, dpsi
     call calculate_jacobian(np_lcfs,nflux, r_mag_surf, z_mag_surf,dtheta,dpsi,jacobian) 
-!    call plasma_volume_area(nflux,np_lcfs,jacobian,dpsi,dtheta,r_mag_surf, vol, pol_area) 
+    !    call plasma_volume_area(nflux,np_lcfs,jacobian,dpsi,dtheta,r_mag_surf, vol, pol_area) 
 
     !search new magnetic surfaces
 !!$  do j = 1, nflux
@@ -3985,6 +4093,22 @@ contains
 !!$  call calculate_jacobian(np_lcfs,nflux, r_mag_surf, z_mag_surf,dtheta,dpsi,jacobian) 
 !!$  call plasma_volume_area(nflux,np_lcfs,jacobian,dpsi,dtheta,r_mag_surf, vol, pol_area) 
     !  write(*,*) '***************out here', 'j=',j, 'myid=',myid
+  contains
+    subroutine safety_factor()
+      use magnetic_field_functions2, only : bpol_func, bphi_si
+      real(p_) :: r,z,s
+      open(newunit=u,file='safety_factor.txt')
+      do j=1,nflux
+         s = 0
+         do i=1, np_lcfs-1
+            r=r_mag_surf(i,j)
+            z=z_mag_surf(i,j)
+            s = s + dl(i,j)*abs(bphi_si(r, z))/(bpol_func(r,z)*r)
+         enddo
+         write(u,*) pfn(j), s/twopi
+      enddo
+      close(u)
+    end subroutine safety_factor
   end subroutine magnetic_surface_coordinates
 
 
@@ -4129,7 +4253,6 @@ contains
     real(p_), intent(in) :: r_mag_surf(np_lcfs, nflux), z_mag_surf(np_lcfs, nflux)
     real(p_), intent(out) :: circumference(nflux), dl(np_lcfs-1,nflux)
     integer :: i, j
-    !  real(p_) :: dl, sum
     real(p_) :: sum
 
     call arc_length(r_mag_surf,z_mag_surf,nflux,np_lcfs,dl)
@@ -4290,7 +4413,7 @@ subroutine process_magnetic_flux()
      write(*,*) 'minimum and maximal value of psi determined directly from the discrete data', minval(psi), maxval(psi)
      write(*,*) 'value of psi at magnetic axis calculated from interpolating function',psi_func(r_axis,z_axis)
      write(*,*) 'value of psi at magnetic axis specified in g-file, psi_axis=',psi_axis
-     write(*,*) 'pfn at a reference point (for testing)=', (psi_func(2.22339_p_,zero)-psi_axis)/(psi_lcfs-psi_axis)
+     write(*,*) 'pfn at a reference point (for testing)=', (psi_func(r_axis,zero)-psi_axis)/(psi_lcfs-psi_axis)
   endif
 
   npsi=nx !nx in g-file is also used to define the number of radial grid points.
@@ -4324,6 +4447,66 @@ subroutine process_magnetic_flux()
 end subroutine process_magnetic_flux
 
 
+subroutine curves_in_pphi_lambda_plane()
+  use constants, only : p_, pi, zero, two, twopi, kev
+  use ep_parameters, only : mass, charge, vn
+  use radial_module,only: psi_array, pfn, baxis, z_axis
+  use twod_array_in_mc_mod, only : bfield_mc_func, bfield_mc2d
+  use magnetic_field_functions1, only : g_func, psi_func
+  use magnetic_field_functions2, only : b_si
+  use magnetic_coordinates, only : mpoloidal, nflux
+  use twod_array_in_mc_mod, only : bfield_mc2d
+  use boundary, only : x_lcfs, z_lcfs
+  use radial_module, only : psi_axis
+  implicit none
+  integer :: u, u1, u2,u3, u4, i, j, k, jr
+  integer,parameter :: n=200, m=50, nr=50
+  real(p_) :: b_val, bmax, bmin, psi_val, pfn_val, g_val, g_axis, r,z, rmin,rmax
+  real(p_) :: energy, pphi(n),lambda1, lambda2, lambda3, lambda_max(n), pphi_min, pphi_max
+  real(p_) :: lambda(mpoloidal,nflux), lambda_val
+
+  energy=65*kev/(mass*vn**2)
+  pphi_min = minval(psi_array) - 2*(maxval(psi_array)-minval(psi_array))
+  pphi_max = maxval(psi_array) + 2*(maxval(psi_array)-minval(psi_array))
+  do j=1,n
+     pphi(j)=pphi_min + (pphi_max - pphi_min)/(n-1)*(j-1) !in unit of Ze*Bn*Ln**2
+  enddo
+
+  open(newunit=u,file='phase_space_boundary.txt')   !outmost upper boundary of the phase space (Lambda, Pphi), 
+  do k=1,n
+     do j=1,nflux !2D scanning to find the maximum of Lambda
+        psi_val=psi_array(j)
+        g_val=g_func(psi_val)
+        do i=1,mpoloidal
+           b_val=bfield_mc2d(i,j)
+           lambda(i,j)= -b_val*abs(baxis)/g_val**2*twopi**2/(two*energy)*(pphi(k)-psi_val)**2 + abs(baxis)/b_val
+        enddo
+     enddo
+     lambda_max(k)=maxval(lambda)
+     if(lambda_max(k) .ge. 0)  write(u,*) pphi(k), lambda_max(k)
+  enddo
+  close(u)
+
+  
+  open(newunit=u1, file='phase_space_lcfs_hfs.txt')
+  open(newunit=u2,file='phase_space_lcfs_lfs.txt')
+  open(newunit=u3,file='phase_space_magnetic_axis.txt')
+  psi_val=psi_array(nflux) !LCFS
+  pfn_val=pfn(nflux)
+  bmax=maxval(bfield_mc2d(:,nflux))
+  bmin=minval(bfield_mc2d(:,nflux))
+  g_val=g_func(psi_val)
+  g_axis=g_func(psi_axis)
+  do j=1,n
+     lambda1= -bmax*abs(baxis)/g_val**2*twopi**2/(two*energy)*(pphi(j)-psi_val)**2 + abs(baxis)/bmax
+     lambda2= -bmin*abs(baxis)/g_val**2*twopi**2/(two*energy)*(pphi(j)-psi_val)**2 + abs(baxis)/bmin
+     lambda3= -abs(baxis)*abs(baxis)/g_axis**2*twopi**2/(two*energy)*(pphi(j)-psi_axis)**2 + abs(baxis)/abs(baxis)
+     if(lambda1 .ge. 0) write(u1,*) pphi(j), lambda1
+     if(lambda2 .ge. 0) write(u2,*) pphi(j), lambda2
+     if(lambda3 .ge. 0) write(u3,*) pphi(j), lambda3
+  enddo
+  close(u1);   close(u2);   close(u3)
+end subroutine curves_in_pphi_lambda_plane
 
 subroutine orbit_classification()
   use constants, only : p_, pi, zero, two, twopi, kev
@@ -4338,67 +4521,22 @@ subroutine orbit_classification()
   use radial_module, only : psi_axis
   implicit none
   integer :: u, u1, u2,u3, u4, i, j, k, jr
-  integer,parameter :: n=100, m=50, nr=50
+  integer,parameter :: n=200, m=50, nr=50
   real(p_) :: f(nr)
-  real(p_) :: b_val, bmax, bmin, psi_val, pfn_val, g_val, charge_sign, r,z, rmin,rmax
-  real(p_) :: energy, pphi(n),lambda1, lambda2, lambda3, lambda_max, pphi_min, pphi_max
+  real(p_) :: b_val,psi_val, pfn_val, g_val, charge_sign, r,z, rmin,rmax
+  real(p_) :: energy, pphi(n),lambda_max(n), pphi_min, pphi_max
   real(p_) :: lambda(mpoloidal,nflux), lambda_val, mu, vpar, vpar_sq1, vpar_sq2
   real(p_) :: dtao, wphi, wtheta
   logical :: got, loss, trapped
 
-  dtao=4.0d0
-  open(newunit=u,file='passing_trapped_boundary.txt')
-  do i=1,nflux
-!!$     bmax=bfield_mc_func(-pi, pfn(i))
-!!$     bmin=bfield_mc_func(zero, pfn(i))
-     bmax=maxval(bfield_mc2d(:,i))
-     bmin=minval(bfield_mc2d(:,i))
-
-     write(u,*) psi_array(i), abs(baxis)/bmax, abs(baxis)/bmin
-  enddo
-  close(u)
-
-     energy=55*kev/(mass*vn**2)
-  pphi_min = minval(psi_array) - (maxval(psi_array)-minval(psi_array))
-  pphi_max = maxval(psi_array) + (maxval(psi_array)-minval(psi_array))
+  energy=65*kev/(mass*vn**2)
+  pphi_min = minval(psi_array) - 2*(maxval(psi_array)-minval(psi_array))
+  pphi_max = maxval(psi_array) + 2*(maxval(psi_array)-minval(psi_array))
   do j=1,n
-     !pphi(j)=0.12+(0.54-0.12)/(n-1)*(j-1) !in unit of Ze*Bn*Ln**2
      pphi(j)=pphi_min + (pphi_max - pphi_min)/(n-1)*(j-1) !in unit of Ze*Bn*Ln**2
   enddo
 
-
-  open(newunit=u,file='confine_boundary.txt')
-  i=nflux
-  psi_val=psi_array(i)
-  pfn_val=pfn(i)
-  do j=1,n
-!!$     bmax=bfield_mc_func(-pi, pfn_val)
-!!$     bmin=bfield_mc_func(zero,pfn_val)
-     bmax=maxval(bfield_mc2d(:,i))
-     bmin=minval(bfield_mc2d(:,i))
-     g_val=g_func(psi_val)
-     lambda1= -bmax*abs(baxis)/g_val**2*twopi**2/(two*energy)*(pphi(j)-psi_val)**2 + abs(baxis)/bmax
-     lambda2= -bmin*abs(baxis)/g_val**2*twopi**2/(two*energy)*(pphi(j)-psi_val)**2 + abs(baxis)/bmin
-     lambda3= -abs(baxis)*abs(baxis)/g_val**2*twopi**2/(two*energy)*(pphi(j)-psi_axis)**2 + abs(baxis)/abs(baxis)
-     write(u,*) pphi(j), lambda1, lambda2, lambda3
-  enddo
-  close(u)
-  !outmost upper boundary of the phase space (Lambda, Pphi), 
-  open(newunit=u,file='phase_space_boundary.txt')
-  do k=1,n
-     do j=1,nflux !2D scanning to find the maximum of Lambda
-        psi_val=psi_array(j)
-        g_val=g_func(psi_val)
-        do i=1,mpoloidal
-           b_val=bfield_mc2d(i,j)
-           lambda(i,j)= -b_val*abs(baxis)/g_val**2*twopi**2/(two*energy)*(pphi(k)-psi_val)**2 + abs(baxis)/b_val
-        enddo
-     enddo
-     lambda_max=maxval(lambda)
-     write(u,*) pphi(k), lambda_max
-  enddo
-  close(u)
-  !return
+  dtao=4.0d0
   rmin=minval(x_lcfs)
   rmax=maxval(x_lcfs)
   charge_sign=charge/abs(charge)
@@ -4470,7 +4608,8 @@ module set_ne_mod
 
       !  z=(one-pfn)*2.d19+0.2d19 !in uint of m^-3
       if(pfn.gt.1._p_) then
-         z=0.1*ne_npsi(npsi) !the density outside LCFS is assumed to be constant
+         !z=0.1*ne_npsi(npsi) !the density outside LCFS is assumed to be constant
+         z = ne_npsi(npsi)*exp(-(pfn-1)*100) !decaying
       else
          !call splint(pfn_ndata,ne_ndata,tmp_y2,ndata,pfn,z) !interpolate to get the value of ne at the required location, pfn
          !call linear_1d_interpolate_nonuniform(ndata, pfn_ndata,ne_ndata,pfn,z)
@@ -4485,7 +4624,7 @@ module set_ne_mod
     subroutine set_electron_density(ne_file,unit_of_ne, prof_rc_type)
       !set radial mass density profile by reading a file of the radial density profile
       use precision,only:p_
-      use constants,only: one,two
+      use constants,only: one,two, myid
       use radial_module,only:npsi,pfn_npsi,tfn_npsi !as input
       use ne_module,only:  ndata,pfn_ndata,ne_ndata,ne_npsi,tmp_y2 !as output, !tmp_y2 stores the interpolating coefficients
       use magnetic_field_functions1, only : tfn_func_pfn
@@ -4501,7 +4640,7 @@ module set_ne_mod
       real(p_)::tmp_y2b(npsi), tmp
       integer:: j, u
 
-      open(newunit=u,file=ne_file)
+      open(newunit=u,file=ne_file, status='old')
       do j=1,max_num
          read(u,*,end=111) radial_coordinate(j),tmp_ne(j) !the first is the radial coordiante, second the electron number density
          !ne_ndata(j)=0.2d0 !set analytical form for the electron number density profile
@@ -4509,7 +4648,7 @@ module set_ne_mod
 111   close(u)
 
       ndata=j-1
-      !write(*,*) 'number of data of the density radial profile=',ndata
+      if(myid==0) write(*,*) 'number of data for ne profile=',ndata
       if(ndata.le.1) stop 'please provide the profile of the electron number density'
 
       allocate(ne_ndata(ndata))
@@ -4592,13 +4731,13 @@ subroutine set_electron_temperature(te_file,unit_of_te, te_prof_rc_type)
 
   real(p_),dimension(:),allocatable::  tfn_sqrt_ndata
   real(p_)::tmp_y2b(npsi), tmp
-  integer:: j
+  integer:: j,u
 
-  open(11,file=te_file)
+  open(newunit=u,file=te_file, status='old')
   do j=1,max_num
-     read(11,*,end=111) radial_coordinate(j),tmp_te(j) !the first is the radial coordiante, second the electron number density
+     read(u,*,end=111) radial_coordinate(j),tmp_te(j) !the first is the radial coordiante, second the electron number density
   enddo
-111 close(11)
+111 close(u)
 
   ndata=j-1
   !write(*,*) 'number of data of the density radial profile=',ndata
@@ -4684,13 +4823,13 @@ module set_ti_mod
       real(p_):: radial_coordinate(max_num),tmp_ti(max_num)
       real(p_),dimension(:),allocatable::  tfn_sqrt_ndata
       real(p_)::tmp_y2b(npsi), tmp
-      integer:: j
+      integer:: j, u
 
-      open(11,file=ti_file)
+      open(newunit=u,file=ti_file, status='old')
       do j=1,max_num
-         read(11,*,end=111) radial_coordinate(j),tmp_ti(j) !the first is the radial coordiante, second the electron number density
+         read(u,*,end=111) radial_coordinate(j),tmp_ti(j) !the first is the radial coordiante, second the electron number density
       enddo
-111   close(11)
+111   close(u)
 
       ndata=j-1
       !write(*,*) 'number of data of the density radial profile=',ndata
@@ -4787,7 +4926,7 @@ contains
     real(p_)::tmp_y2b(npsi), tmp
     integer:: j, u
 
-    open(newunit=u,file=nd_file)
+    open(newunit=u,file=nd_file, status='old')
     do j=1,max_num
        read(u,*,end=111) radial_coordinate(j),tmp_ne(j) !the first is the radial coordiante, second the electron number density
        !nd_ndata(j)=0.2d0 !set analytical form for the electron number density profile
@@ -4886,7 +5025,7 @@ contains
     real(p_)::tmp_y2b(npsi), tmp
     integer:: j, u
 
-    open(newunit=u,file=nt_file)
+    open(newunit=u,file=nt_file, status='old')
     do j=1,max_num
        read(u,*,end=111) radial_coordinate(j),tmp_ne(j) !the first is the radial coordiante, second the electron number density
        !nt_ndata(j)=0.2d0 !set analytical form for the electron number density profile
@@ -5512,27 +5651,27 @@ subroutine construct_rmp_field()
   allocate(rmp_Ar(nx,nz,nphi), rmp_Az(nx,nz,nphi), rmp_Aphi(nx,nz,nphi))
   if(trim(read_or_calculate_rmp).eq."read") then
      call read_rmp_field(myid, rmp_file, phishift_user, nx,nz,nphi,rarray,zarray,phiarray,rmp_br,rmp_bz,rmp_bphi)
-     rmp_br=rmp_br*rmp_current_amplitude/10000.d0  !scalled to desired current amplitude (the original data is for rmp_current=10000A)
-     rmp_bz=rmp_bz*rmp_current_amplitude/10000.d0  
-     rmp_bphi=rmp_bphi*rmp_current_amplitude/10000.d0  
+!!$     rmp_br=rmp_br*rmp_current_amplitude/10000.d0  !scalled to desired current amplitude (the original data is for rmp_current=10000A)
+!!$     rmp_bz=rmp_bz*rmp_current_amplitude/10000.d0  
+!!$     rmp_bphi=rmp_bphi*rmp_current_amplitude/10000.d0  
   else if(trim(read_or_calculate_rmp).eq."calculate") then
      rmin = minval(rlim); rmax = maxval(rlim); zmin = minval(zlim); zmax = maxval(zlim);
      if(myid==0) write(*,*) 'rmin, rmax, zmin, zmax=', rmin, rmax, zmin, zmax
      call rmp_field_grids(rmin,rmax,zmin,zmax,phimin,phimax, nx,nz,nphi,rarray,zarray,phiarray)
      call calculate_rmp_field(is_ripple, nx,nz,nphi,rarray,zarray,phiarray,rmp_br,rmp_bz,rmp_bphi, rmp_Ar, rmp_Az,rmp_Aphi)
   else
-     stop 'please specify a way of obtaining the rmp field'
+     stop 'please specify a way of obtaining the 3D field'
   endif
 
   !write(*,*) 'nx,nz,nphi',nx,nz,nphi
 
   allocate(c_br(nx,nz), c_bz(nx,nz), c_bphi(nx,nz))
-  
+
   if(is_ripple .eqv. .true.) then
      allocate(delta(nx,nz))
      !call ripple(nx,nz,nphi,rarray, zarray, phiarray,sqrt(rmp_bphi**2+rmp_br**2+rmp_bz**2))
-     call ripple(nx,nz,nphi,rarray, zarray, phiarray,rmp_bphi,delta)
-     !!$ call ripple_field(nx,nz,nphi,rarray, zarray, phiarray,delta, rmp_br, rmp_bz, rmp_bphi)
+     if(myid==0) call ripple(nx,nz,nphi,rarray, zarray, phiarray,rmp_bphi,delta)
+!!$ call ripple_field(nx,nz,nphi,rarray, zarray, phiarray,delta, rmp_br, rmp_bz, rmp_bphi)
      !rmp_br=0
      !rmp_bz=0
      call TF_toroidal_spectrum(.true., nx, nz, nphi, rarray, zarray,phiarray, rmp_br, c_br)
@@ -5543,8 +5682,8 @@ subroutine construct_rmp_field()
      call rmp_toroidal_spectrum(filtering_rmp, nx, nz, nphi, rarray, zarray,phiarray, rmp_bz, c_bz)
      call rmp_toroidal_spectrum(filtering_rmp, nx, nz, nphi, rarray, zarray,phiarray, rmp_bphi, c_bphi)
   endif
-  if(myid==0) write(*,*) 'maximum and minimal RMP_bphi', maxval(rmp_bphi),  minval(rmp_bphi)
-  if(myid==0) write(*,*) 'maximum and minimal RMP_br', maxval(rmp_br), minval(rmp_br)
+  if(myid==0) write(*,*) 'max and min of 3D field bphi (Telsa)', maxval(rmp_bphi),  minval(rmp_bphi)
+  if(myid==0) write(*,*) 'max and min of 3D field br (Telsa)', maxval(rmp_br), minval(rmp_br)
 
   !call get_harmonic(myid, nx, nz, nphi, rarray, zarray, phiarray, rmp_br) !keep only n=1 component
   if(myid==0) call diagnose_rmp(nx,nz,nphi, rarray, zarray, phiarray, rmp_br, rmp_bz, rmp_bphi, c_br, c_bz, c_bphi)
@@ -5576,7 +5715,7 @@ subroutine construct_rmp_field()
 
   rmp_b=sqrt(rmp_br**2+rmp_bz**2+rmp_bphi**2)
   call partial_derivatives_3d(nx,nz,nphi,rarray,zarray,phiarray,rmp_b,rmp_b_r,rmp_b_z,rmp_b_phi)
-  
+
   if(myid==0) call p()
 contains
   subroutine p()
@@ -5643,6 +5782,7 @@ end subroutine rmp_toroidal_spectrum
 subroutine TF_toroidal_spectrum(filtering, nx, nz, nphi, rarray, zarray, phiarray, field, cn)
   use precision,only:p_
   use constants, only: twopi
+  use rmp_coils, only : nripple
   implicit none
   integer,intent(in):: nx, nz, nphi
   real(p_), intent(in) :: phiarray(nphi), rarray(nx), zarray(nz)
@@ -5654,7 +5794,7 @@ subroutine TF_toroidal_spectrum(filtering, nx, nz, nphi, rarray, zarray, phiarra
   complex(p_), parameter :: ii=(0, 1.0d0)
   real(p_) :: dphi
   integer :: i, j, k, u, t
-  integer,parameter :: nripple=16
+
 
   dphi=phiarray(2)-phiarray(1)
   do j=1,nz
@@ -5688,7 +5828,7 @@ subroutine TF_toroidal_spectrum(filtering, nx, nz, nphi, rarray, zarray, phiarra
 !!$  endif
 !!$
 !!$
-    if(filtering .eqv. .true.) then 
+  if(filtering .eqv. .true.) then 
      do j=1,nz
         do i=1, nx
            do k=1, nphi !reconstruct the 3D field using a pair of  (complex) Fourier harmonics
@@ -5698,7 +5838,7 @@ subroutine TF_toroidal_spectrum(filtering, nx, nz, nphi, rarray, zarray, phiarra
      enddo
   endif
   !field=field*1.5d0 !scaling the ripple field to test the sensitivity
-  
+
 end subroutine TF_toroidal_spectrum
 
 subroutine gaurantee_divergence_free(nx,nz,nphi, rarray,zarray, phiarray,br,bz,bphi, br_r, bz_z, bphi_phi) 
@@ -5736,10 +5876,10 @@ subroutine get_harmonic(myid, nx, nz, nphi, rarray, zarray, phiarray, field)
   use precision,only:p_
   use constants, only: twopi
   use boundary,only: np_lcfs,x_lcfs,z_lcfs,nlim,rlim,zlim
-    use rmp_coils, only : rmp_nh
+  use rmp_coils, only : rmp_nh
   use, intrinsic :: ieee_arithmetic, only: IEEE_Value, IEEE_QUIET_NAN
   use, intrinsic :: iso_fortran_env, only: real32
-      use pnpoly_mod, only : pnpoly
+  use pnpoly_mod, only : pnpoly
   implicit none
   integer,intent(in):: myid, nx, nz, nphi
   real(p_), intent(in) :: phiarray(nphi), rarray(nx), zarray(nz)
@@ -5757,7 +5897,7 @@ subroutine get_harmonic(myid, nx, nz, nphi, rarray, zarray, phiarray, field)
   do j=1,nz
      do i=1, nx
         call PNPOLY(rarray(i),zarray(j), x_lcfs,z_lcfs,np_lcfs,INOUT) !find out wheter the point (r,z) is within the limiter
-!                       call PNPOLY(rarray(i),zarray(j), rlim,zlim,nlim,INOUT) !find out wheter the point (r,z) is within the limiter
+        !                       call PNPOLY(rarray(i),zarray(j), rlim,zlim,nlim,INOUT) !find out wheter the point (r,z) is within the limiter
         if (inout.eq.-1 )      cycle
         sum=0.
         do k=1,nphi-1
@@ -5802,6 +5942,7 @@ end subroutine rmp_field_grids
 subroutine read_rmp_field(myid, rmp_file,phishift_user, nx,nz,nphi,rarray,zarray,phiarray,rmp_br,rmp_bz,rmp_bphi)
   use constants, only : twopi
   use precision,only:p_
+  use rmp_coils, only : n=>nripple
   implicit none
   character(*),intent(in)::rmp_file 
   integer,intent(in):: myid, nx,nz,nphi
@@ -5810,8 +5951,8 @@ subroutine read_rmp_field(myid, rmp_file,phishift_user, nx,nz,nphi,rarray,zarray
   real(p_),intent(out):: rmp_br(nx,nz,nphi), rmp_bz(nx,nz,nphi), rmp_bphi(nx,nz,nphi)
   real(p_):: x(nx,nz),z(nx,nz), c_br(nx, nz,2), c_bz(nx, nz,2), c_bphi(nx, nz,2)
   real(p_):: rmax,rmin,zmax,zmin,phimax,phimin,dx,dz,dphi
-    real(p_), parameter :: phishift0=twopi/4 !this shift is found numerically by me, to make the vacuum rmp field calculated by me agrees with xu's vacuum rmp.
-    !    real(p_), parameter :: phishift0=0.
+  real(p_), parameter :: phishift0=twopi/4 !this shift is found numerically by me, to make the vacuum rmp field calculated by me agrees with xu's vacuum rmp.
+  !    real(p_), parameter :: phishift0=0.
   real(p_) :: phishift
   integer:: i,j, k, u
 
@@ -5850,16 +5991,19 @@ subroutine read_rmp_field(myid, rmp_file,phishift_user, nx,nz,nphi,rarray,zarray
      phiarray(k)=phimin+dphi*(k-1)
   enddo
   phishift = phishift0 + phishift_user*(twopi/8)
-!reconstruct 3D field, 2*Re*cos+2*Im*sin, where the factor 2 has already been included in XuYingFeng's data
+  !reconstruct 3D field, 2*Re*cos+2*Im*sin, where the factor 2 has already been included in XuYingFeng's data
   do i=1,nx 
      do j=1,nz
         do k=1, nphi
-           rmp_br(i,j,k)=   c_br(i,j,1)*cos(phiarray(k)+phishift) + c_br(i,j,2)*sin(phiarray(k)+phishift)
-           rmp_bz(i,j,k)=   c_bz(i,j,1)*cos(phiarray(k)+phishift) + c_bz(i,j,2)*sin(phiarray(k)+phishift)
-           rmp_bphi(i,j,k)= c_bphi(i,j,1)*cos(phiarray(k)+phishift) + c_bphi(i,j,2)*sin(phiarray(k)+phishift)
+           rmp_br(i,j,k)=   c_br(i,j,1)*cos(n*phiarray(k)+phishift) + c_br(i,j,2)*sin(n*phiarray(k)+phishift)
+           rmp_bz(i,j,k)=   c_bz(i,j,1)*cos(n*phiarray(k)+phishift) + c_bz(i,j,2)*sin(n*phiarray(k)+phishift)
+           rmp_bphi(i,j,k)= c_bphi(i,j,1)*cos(n*phiarray(k)+phishift) + c_bphi(i,j,2)*sin(n*phiarray(k)+phishift)
         enddo
      enddo
   enddo
+
+!!$  if(myid==0) write(*,*) 'maximum and minimal RMP_bphi', maxval(rmp_bphi),  minval(rmp_bphi)
+!!$  if(myid==0) write(*,*) 'maximum and minimal RMP_br', maxval(rmp_br), minval(rmp_br)
 
 end subroutine read_rmp_field
 
@@ -5956,7 +6100,7 @@ subroutine plot_rmp_rad_pol_spectrum(nx,nz, xarray, zarray, c_br,c_bz)
   use radial_module, only : nflux, pfn, psi_axis, psi_lcfs
   use magnetic_field_functions1, only: psi_r_func, psi_z_func
   use magnetic_field_functions2, only: bphi_si
-    use interpolate_mod, only : linear_2d_interpolate
+  use interpolate_mod, only : linear_2d_interpolate
   implicit none
   integer,intent(in):: nx,nz
   real(p_),intent(in) :: xarray(nx), zarray(nz)
@@ -6007,9 +6151,9 @@ subroutine plot_rmp_rad_pol_spectrum(nx,nz, xarray, zarray, c_br,c_bz)
   enddo
   close(u)
 
-   open(newunit=u,file='rmp_rad_pol_spectrum1d.txt')
-   do m=-mh, mh
-   do j=2,nflux-1
+  open(newunit=u,file='rmp_rad_pol_spectrum1d.txt')
+  do m=-mh, mh
+     do j=2,nflux-1
         write(u,*) m, sqrt(pfn(j)), abs(spectrum(m,j))
      enddo
      write(u,*)
@@ -6020,21 +6164,21 @@ subroutine plot_rmp_rad_pol_spectrum(nx,nz, xarray, zarray, c_br,c_bz)
   do j=2,nflux-1
      do i=1,np_lcfs
         !    write(u,*) sqrt(pfn(j)), 0+twopi/(np_lcfs-1)*(i-1), abs(bradial(i,j))
-            write(u,*) r_mag_surf(i,j), z_mag_surf(i,j), abs(bradial(i,j))
+        write(u,*) r_mag_surf(i,j), z_mag_surf(i,j), abs(bradial(i,j))
      enddo
      write(u,*) 
   enddo
   close(u)
 
   call magnetic_island_width(spectrum, mh, nflux)
-  
+
 end subroutine plot_rmp_rad_pol_spectrum
 
 subroutine magnetic_island_width(spectrum, mh, nflux)
   use precision, only : p_
   use constants, only : four, one_half
   use radial_module, only : pfn, pfn_npsi, qpsi, npsi
-    use rmp_coils, only : rmp_nh
+  use rmp_coils, only : rmp_nh
   use interpolate_mod, only : linear_1d_interpolate_nonuniform, linear_1d_interpolate
   implicit none
   integer,intent(in) :: mh, nflux
@@ -6087,7 +6231,7 @@ subroutine read_rmp_field0(rmp_file,nx,nz,nphi,rarray,zarray,phiarray,rmp_br,rmp
 
   open(21,file=rmp_file)
   do i=1,nx
-!write(*,*) 'i=', i
+     !write(*,*) 'i=', i
      do j=1,nz
         do k=1,nphi
            read(21,*) x(i,j,k),z(i,j,k),phi(i,j,k),rmp_br(i,j,k),rmp_bz(i,j,k),rmp_bphi(i,j,k)
@@ -6108,7 +6252,7 @@ subroutine read_rmp_field0(rmp_file,nx,nz,nphi,rarray,zarray,phiarray,rmp_br,rmp
   dx=(rmax-rmin)/(nx-1)
   dz=(zmax-zmin)/(nz-1)
   dphi=(phimax-phimin)/(nphi-1)
-write(*,*) 'RMP field, rmin=',rmin,'rmax=',rmax, 'zmin=',zmin,'zmax=',zmax,'phimin=',phimin,'phimax=',phimax
+  write(*,*) 'RMP field, rmin=',rmin,'rmax=',rmax, 'zmin=',zmin,'zmax=',zmax,'phimin=',phimin,'phimax=',phimax
 
   do i=1,nx
      rarray(i)=rmin+dx*(i-1)
@@ -6159,6 +6303,7 @@ end subroutine partial_derivatives_3d
 
 subroutine ripple(nx,nz,nphi,rarray, zarray, phiarray,field, delta)
   use constants, only : p_, myid
+  use radial_module, only : baxis
   implicit none
   integer, intent(in)  :: nx, nz, nphi
   real(p_), intent(in) :: rarray(nx), zarray(nz), phiarray(nphi)
@@ -6178,40 +6323,41 @@ subroutine ripple(nx,nz,nphi,rarray, zarray, phiarray,field, delta)
      do j=1,nz
         max=maxval(field(i,j,:))
         min=minval(field(i,j,:))
-        delta(i,j)=(max-min)/(max+min)
+        delta(i,j)=abs(max-min)/(abs(max)+abs(min)+2*abs(baxis))
      enddo
   enddo
-  !if(delta(1,1)<0) delta=-delta
-  if(myid==0) then
-     open(newunit=u,file='ripple.txt')
-     open(newunit=u2,file='ripple_full.txt')
-     do i=1,nx
-        do j=1,nz
-           write(u2,*) rarray(i), zarray(j), delta(i,j)
-           call check_whether_in_boundary3(rarray(i),zarray(j),loss)
-           if(loss .eqv. .true.) then
-              write(u,*) rarray(i), zarray(j), 'NaN'
-           else
-              write(u,*) rarray(i), zarray(j), abs(delta(i,j))
-           endif
-        enddo
-        write(u,*)
-        write(u2,*)
+
+
+  write(*,*) 'ripple delta maximal,minmal=', maxval(delta), minval(delta)
+  open(newunit=u,file='ripple.txt')
+  open(newunit=u2,file='ripple_full.txt')
+  do i=1,nx
+     do j=1,nz
+        write(u2,*) rarray(i), zarray(j), delta(i,j)
+        call check_whether_in_boundary3(rarray(i),zarray(j),loss)
+        if(loss .eqv. .true.) then
+           write(u,*) rarray(i), zarray(j), 'NA'
+        else
+           write(u,*) rarray(i), zarray(j), abs(delta(i,j))
+        endif
      enddo
-     close(u)
-     close(u2)
-  endif
+     write(u,*)
+     write(u2,*)
+  enddo
+  close(u)
+  close(u2)
+
 end subroutine ripple
 
 subroutine ripple_field(nx,nz,nphi,rarray, zarray, phiarray,delta, br, bz, bphi)
   use constants, only : p_, myid
   use radial_module, only : fpsi
+  use rmp_coils, only : nripple
   implicit none
   integer, intent(in)  :: nx, nz, nphi
   real(p_), intent(in) :: rarray(nx), zarray(nz), phiarray(nphi)
   real(p_), intent(in) :: delta(nx,nz)
   real(p_), intent(out) :: br(nx,nz,nphi), bz(nx,nz,nphi), bphi(nx,nz,nphi)
-  integer,parameter :: nripple=16
   real(p_) :: delta_r(nx,nz), delta_z(nx,nz)
   integer :: i,j,k, i1,i2, j1,j2
 
@@ -6271,7 +6417,8 @@ end subroutine single_toroidal_harmonic_on_poloidal2d
 
  subroutine check_whether_in_boundary3(r,z,loss)
     use precision,only:p_
-    use boundary,only: n_bdry=>np_lcfs,r_bdry=>x_lcfs,z_bdry=>z_lcfs
+    !use boundary,only: n_bdry=>nlim,r_bdry=>rlim,z_bdry=>zlim
+    use boundary,only:  n_bdry=>np_lcfs,r_bdry=>x_lcfs,z_bdry=>z_lcfs
         use pnpoly_mod, only : pnpoly
     implicit none
     real(p_),intent(in):: r,z
@@ -7460,7 +7607,7 @@ pure  subroutine push0_2nd_rk_optimised(dtao,mu,rg,zg,phi,vpar)
 
   end subroutine push0_2nd_rk_optimised
 
-  subroutine push0_4th_rk_optimised(dtao,mu,rg,zg,phi,vpar)
+  subroutine push0_4th_rk_optimised(dtao,mu,rg,zg,phi,vpar,vg_phi)
     !input: initial condition of the orbit: mu,r,z,phi,vpar
     !Output: the instanteous value of the orbit after dtao: mu,r,z,phi,vpar
     use precision,only:p_
@@ -7473,6 +7620,7 @@ pure  subroutine push0_2nd_rk_optimised(dtao,mu,rg,zg,phi,vpar)
     implicit none
     real(p_),intent(in) :: dtao, mu
     real(p_),intent(inout) :: rg,zg,phi,vpar  !instantaneous value of orbit
+    real(p_),intent(out) :: vg_phi
     real(p_) :: rg_guess, zg_guess, phi_guess, vpar_guess
     real(p_), dimension(4)  :: rp, zp !points on gyro-ring
     real(p_), dimension(4) :: r_rate, z_rate, phi_rate, vpar_rate
@@ -7577,7 +7725,7 @@ pure  subroutine push0_2nd_rk_optimised(dtao,mu,rg,zg,phi,vpar)
     zg=zg+      (kz1+two*kz2+two*kz3+kz4)/six
     phi=phi+    (kphi1+two*kphi2+two*kphi3+kphi4)/six
     vpar=vpar+  (kvpar1+two*kvpar2+two*kvpar3+kvpar4)/six
-
+vg_phi=((kphi1+two*kphi2+two*kphi3+kphi4)/six)/dtao*rg
   end subroutine push0_4th_rk_optimised
 end module push0_mod
 
@@ -8294,16 +8442,13 @@ subroutine focus_and_divergence_effect(ninjection,x,y,v,vx,vy,vzlen) !this deter
   integer:: j
   real(p_),external:: x_divergence_func,y_divergence_func
   real(p_):: angle_min,angle_max,pmax
-  real(p_):: sub_grid_height
-
-  sub_grid_height=source_height/four
 
   do j=1,ninjection !consider focusing effect
-     !     if(y(j)>source_height/four) then
-     if(y(j)>0._p_) then
+     if(y(j)>source_height/four) then
+     !if(y(j)>0._p_) then
         central_angle(j)=-source_focus_angle
-        !     else if(y(j)<-source_height/four) then
-     else if(y(j)<0) then
+     else if(y(j)<-source_height/four) then
+     !else if(y(j)<0) then
         central_angle(j)=source_focus_angle
      else
         central_angle(j)=0._p_
@@ -8340,10 +8485,10 @@ end subroutine focus_and_divergence_effect
 end module focus_and_divergence_effect_mod
 module neutral_ionization_mod
 contains
-  subroutine neutral_ionization(myid, ktime,ninjection,weight,energy,x,y,zlen,v,vx,vy,vzlen,r,z,phi,ionized)
+  subroutine neutral_ionization_old(ninjection,weight,energy,x,y,zlen,v,vx,vy,vzlen,r,z,phi,ionized)
     !assume that the ionization process does not change the kinetic energy of neutral particles
     use precision,only:p_
-    use constants,only: one,two, kev
+    use constants,only: one,two, kev, myid
     use radial_module,only:psi_axis,psi_lcfs
     use boundary,only: np_lcfs, x_lcfs !as input
     use propagate_mod
@@ -8353,7 +8498,7 @@ contains
     use set_te_mod, only : te_func
     use random_mod,only : random_yj
     implicit none
-    integer,intent(in) :: myid, ktime, ninjection
+    integer,intent(in) :: ninjection
     real(p_),intent(in):: energy(ninjection) !we assume that the ionization process does not change the kinetic energy of neutral particles
     real(p_),intent(in):: weight(ninjection)
     real(p_),intent(in):: x(ninjection),y(ninjection),zlen(ninjection) !,t(ninjection)
@@ -8484,6 +8629,256 @@ contains
        write(*,*) 'neutrals power shine-through fraction=', shine_through_power/sum(weight(1:ninjection)*energy(1:ninjection))
        write(*,*) 'ionization fraction=', tmp/sum(weight(1:ninjection))
     endif
+  end subroutine
+
+
+
+  subroutine set_suzuki_fitting_coeffients(e_amu,bulk,impurity,a,b)
+    !beam stopping cross scection is from Suzuki's paper (Plasma Phys. Control. Fusion 40 (1998) 2097-2111). The coefficients used in the fitting formulas
+    !Table 2 and Table 3 in the paper
+    use constants, only : p_
+    implicit none
+    real(p_), intent(in) :: e_amu
+    character, intent(in)   :: bulk, impurity
+    real(p_), intent(out) :: a(10), b(3,2,2)
+
+
+    select case (bulk)
+    case('H')
+       if(e_amu>100) then
+          a(1)=1.27d1; a(2)=1.25d0; a(3)=4.52d-1; a(4)=1.05d-2; a(5)=5.47d-1; a(6)=-1.02d-1;
+          a(7)=3.60d-1; a(8)=-2.98d-2; a(9)=-9.59d-2; a(10)=4.21d-3 !for main plasma of hydrogen (protons), and 100<E(keV/amu)<10**4
+       elseif(e_amu>10) then
+          a(1)=-5.29d1; a(2)=-1.36d0; a(3)=7.19d-2; a(4)=1.37d-2; a(5)=4.54d-1; a(6)=4.03d-1
+          a(7)=-2.20d-1; a(8)=6.66d-2; a(9)=-6.77d-2; a(10)=-1.48d-3
+       else
+          stop 'no availabel data for ionization cross section for the energy range'
+       endif
+
+    case('D')
+       if(e_amu>100) then
+          a(1)=1.41d1; a(2)=1.11d0; a(3)=4.08d-1; a(4)=1.05d-2; a(5)=5.47d-1; a(6)=-4.03d-2
+          a(7)=3.45d-1; a(8)=-2.88d-2; a(9)=-9.71d-2; a(10)=4.74d-3
+
+       elseif(e_amu>10) then
+          a(1)=-6.79d1; a(2)=-1.22d0; a(3)=8.14d-2; a(4)=1.39d-2; a(5)=4.54d-1; a(6)=4.65d-1;
+          a(7)=-2.73d-1; a(8)=7.51d-2; a(9)=-6.30d-2; a(10)=-5.08d-4 !for main plasma of Deuterium
+       else
+          stop 'no availabel data for ionization cross section for the energy range'
+       endif
+    case('T')
+       if(e_amu>100) then
+          a(1)=1.27d1; a(2)=1.26d0; a(3)=4.49d-1; a(4)=1.05d-2; a(5)=5.47d-1; a(6)=-5.77d-3
+          a(7)=3.36d-1; a(8)=-2.82d-2; a(9)=-9.74d-2; a(10)=4.87d-3
+       elseif(e_amu>10) then
+          a(1)=-7.42d1; a(2)=-1.18d0; a(3)=8.43d-2; a(4)=1.39d-2; a(5)=4.53d-1; a(6)=4.91d-1
+          a(7)=-2.94d-1; a(8)=7.88d-2; a(9)=-6.12d-2; a(10)=-1.85d-4
+       else
+          stop 'no availabel data for ionization cross section for the energy range'
+       endif
+    case default
+       stop "***********invalid main plasma speicies"
+    endselect
+
+    select case(impurity)
+    case ('B') !for Boron impurity 
+       if(e_amu>100) then !100<E(keV/amu)<10**4
+          b(1,1,1)=-7.32d-1; b(1,1,2)=1.83d-2 
+          b(1,2,1)=-1.55d-1; b(1,2,2)=-1.72d-2
+          b(2,1,1)=3.21d-1; b(2,1,2)=9.46d-3
+          b(2,2,1)=3.97d-2; b(2,2,2)=4.20d-3
+          b(3,1,1)=-2.04d-2; b(3,1,2)=-6.19d-4
+          b(3,2,1)=-2.24d-3; b(3,2,2)=-2.54d-4
+       elseif(e_amu>10) then
+          b(1,1,1)=1.22d-1; b(1,1,2)=5.27d-2 
+          b(1,2,1)=-4.30d-4; b(1,2,2)=-3.18d-3
+          b(2,1,1)=-1.51d-1; b(2,1,2)=-3.64d-2
+          b(2,2,1)=3.43d-3; b(2,2,2)=1.51d-3
+          b(3,1,1)=4.20d-2; b(3,1,2)=6.92d-3
+          b(3,2,1)=-1.41d-3; b(3,2,2)=-2.90d-4
+       else
+          stop 'no availabel data for ionization cross section for the energy range'
+       endif
+
+    case ('C') !for Carbon impurity
+       if(e_amu>100) then
+          b(1,1,1)=-1.00d0; b(1,1,2)=-2.55d-2
+          b(1,2,1)=-1.25d-1; b(1,2,2)=-1.42d-2
+          b(2,1,1)=3.88d-1; b(2,1,2)=2.06d-2
+          b(2,2,1)=2.97d-2; b(2,2,2)=3.26d-3
+          b(3,1,1)=-2.46d-2; b(3,1,2)=-1.31d-3
+          b(3,2,1)=-1.48d-3; b(3,2,2)=-1.80d-4
+       elseif(e_amu>10) then
+          b(1,1,1)=1.58d-1; b(1,1,2)=5.54d-2 
+          b(1,2,1)=-4.31d-3; b(1,2,2)=-3.35d-3
+          b(2,1,1)=-1.55d-1; b(2,1,2)=-3.74d-2
+          b(2,2,1)=5.37d-3; b(2,2,2)=1.74d-3
+          b(3,1,1)=3.88d-2; b(3,1,2)=6.83d-3
+          b(3,2,1)=-1.60d-3; b(3,2,2)=-3.22d-4
+       else
+          stop 'no availabel data for ionization cross section for the energy range'
+       endif
+
+    case default
+       stop '****data for this impurity are not available presently'
+    endselect
+  end subroutine set_suzuki_fitting_coeffients
+    
+
+  subroutine neutral_ionization(ninjection,weight,energy,x,y,zlen,v,vx,vy,vzlen,r,z,phi,ionized)
+    !assume that the ionization process does not change the kinetic energy of neutral particles
+    use precision,only:p_
+    use constants,only: one,two, kev, myid, atom_mass_unit
+    use background_plasma, only : zeff
+    use radial_module,only:psi_axis,psi_lcfs
+    use boundary,only: np_lcfs, x_lcfs, z_lcfs !as input
+    use ep_parameters, only : mass
+    use propagate_mod
+    use pnpoly_mod, only : pnpoly
+    use magnetic_field_functions1, only : psi_func
+    use nbi_source_parameters_module, only : ionization_outside_lcfs
+    use set_ne_mod, only : ne_func
+    use set_te_mod, only : te_func
+    use random_mod,only : random_yj
+    implicit none
+    integer,intent(in) :: ninjection
+    real(p_),intent(in):: energy(ninjection) !we assume that the ionization process does not change the kinetic energy of neutral particles
+    real(p_),intent(in):: weight(ninjection)
+    real(p_),intent(in):: x(ninjection),y(ninjection),zlen(ninjection) !,t(ninjection)
+    real(p_),intent(in):: v(ninjection),vx(ninjection),vy(ninjection),vzlen(ninjection)
+    logical,intent(out):: ionized(ninjection) !indicate whether neutral marker are ionized
+    real(p_),intent(out):: r(ninjection),z(ninjection),phi(ninjection)
+
+    integer,parameter:: n_step=10000
+    real(p_),parameter::  delta_zlen=0.005_p_ !meter
+
+    real(p_):: x0,y0,zlen0,x1,y1,zlen1
+    real(p_):: r0,z0,phi0,r1,z1,phi1,r_min,r_max
+    real(p_):: trajectory_len
+    real(p_):: sigma_due_to_ion(ninjection),sigma_electron_impact(ninjection) !sigma is the ionization cross section
+    real(p_):: nu !nu=sigma*ne, beam attenuation coefficient
+    !    real(p_):: ne_func !electron number density
+    !    real(p_):: te_func !electron temperature
+    real(p_):: psi,pfn
+    real(p_):: eta(ninjection) ! random numbers between 0 and 1, acossicated with each neutral markers
+    !    real(p_):: random_yj !a random generator
+    real(p_):: sumval
+    real(p_):: shine_through_number, shine_through_power,tmp
+    logical :: shine_through(ninjection), already_in
+    integer:: k,j, ip,jp,kp, inout
+    real(p_) :: a(10), b(3,2,2)
+    real(p_) :: sigma, sigma_h, sz, n, u, eps, e_amu
+
+    do j=1,ninjection
+       eta(j)=random_yj(0) !a random number is associated with every marker
+       ionized(j)=.false.  !initial state is un-ionized
+       shine_through(j)=.false.
+    enddo
+
+    r_min=minval(x_lcfs)
+    r_max=maxval(x_lcfs)
+
+    do j=1,ninjection
+       e_amu=energy(j)/kev/(mass/atom_mass_unit)
+       call set_suzuki_fitting_coeffients(e_amu, bulk='D', impurity='C',a=a,b=b)
+       x0=x(j)
+       y0=y(j)
+       zlen0=zlen(j)
+       !write(*,*) x0,y0,zlen0
+       call transform_cartesian_to_cylindrical(x0,y0,zlen0,r0,phi0,z0)
+       sumval=0.
+       already_in=.false.
+       do k=1,n_step
+          call propagate2(x0,y0,zlen0,vx(j),vy(j),vzlen(j),delta_zlen,x1,y1,zlen1,trajectory_len)
+          call transform_cartesian_to_cylindrical(x1,y1,zlen1,r1,phi1,z1)
+!!$          call PNPOLY(r1,z1,x_lcfs,z_lcfs,np_lcfs,INOUT)
+          if(r1>r_min .and. r1<r_max) then
+             inout=1
+          else
+             inout=-1
+          endif
+          if(already_in .eqv. .false.) then 
+             if(inout==-1) then !particles have not entered the LCFS, and we consider ionization only when a particle enters LCFS,
+                x0=x1 !prepare for the next step
+                y0=y1
+                zlen0=zlen1
+                r0=r1
+                z0=z1
+                phi0=phi1
+                cycle
+             else
+                already_in=.true.
+             endif
+          else
+             if(inout==-1) then
+                shine_through(j)=.true.             
+                exit
+             endif
+          endif
+
+          psi=(psi_func(r1,z1)+psi_func(r0,z0))/two !poloidal magnetic flux
+          pfn=(psi-psi_axis)/(psi_lcfs-psi_axis) !normalized poloidal magnetic flux
+
+          eps=log(e_amu)
+          n=ne_func(pfn)/(1d19)
+          u=log(te_func(pfn))
+          sigma_h=a(1)*(1.0d-16)/e_amu*(1+a(2)*eps+a(3)*eps**2)*(1+(1-exp(-a(4)*n))**a(5)*(a(6)+a(7)*eps+a(8)*eps**2))*&
+               & (1+a(9)*u+a(10)*u**2) !Eq. 28 in Suzuki's paper (Plasma Phys. Control. Fusion 40 (1998) 2097-2111)
+          !write(*,*) 'sigma_h=', sigma_h
+          sz=0
+          do ip=1,3
+             do jp=1,2
+                do kp=1,2
+                   sz = sz+ b(ip,jp,kp)*eps**(ip-1)*log(n)**(jp-1)*u**(kp-1)
+                enddo
+             enddo
+          enddo
+          sigma=sigma_h*(1+(zeff-1)*sz)
+          sigma=sigma/10**4 !from cm^2 to m^2
+
+          !nu=(sigma_due_to_ion(j)+sigma_electron_impact(j))*ne_func(pfn)
+          nu=sigma*ne_func(pfn)
+
+          if((pfn.gt.1) .and. (ionization_outside_lcfs .eqv. .false.)) nu=0. !ionization outside the LCFS is neglected
+          !if(pfn.gt.1) write(*,*) 'pfn=', pfn, 'nu=', nu, 'cs_i=', sigma_due_to_ion(j), 'cs_e=', sigma_electron_impact(j)
+          sumval=sumval+nu*trajectory_len
+
+          if(sumval.ge.log(one/eta(j))) then !indicates this neutral particle is ionized
+             ionized(j)=.true.
+             r(j)= r1
+             z(j)=z1
+             phi(j)=phi1
+             exit !this neutral particle has been ionized, so stop following it and switch to the next neutral particle
+          endif
+
+          !prepare for the next step
+          x0=x1
+          y0=y1
+          zlen0=zlen1
+
+          r0=r1
+          z0=z1
+          phi0=phi1
+       enddo !loop along a neutral particle path 
+              !if(myid==0) write(*,*) r1,z1, phi1,ionized(j), shine_through(j)
+    enddo !loop over markers
+
+    !write(*,*) 'estimated phi_expansion',0.12_p_/2.3195
+    !write(*,*) 'numerical phi_expansion',2*maxval(phi)
+
+    shine_through_number=0.
+    shine_through_power=0.
+    tmp=0
+    do j=1,ninjection
+       if(shine_through(j) .eqv. .true.)  shine_through_number=shine_through_number+weight(j)
+       if(shine_through(j) .eqv. .true.)  shine_through_power=shine_through_power+weight(j)*energy(j)
+       if(ionized(j) .eqv. .true.)  tmp=tmp+weight(j)
+    enddo
+    if(myid==0)    then
+       write(*,*) 'neutrals number shine-through fraction=',shine_through_number/sum(weight(1:ninjection))
+       write(*,*) 'neutrals power shine-through fraction=', shine_through_power/sum(weight(1:ninjection)*energy(1:ninjection))
+       write(*,*) 'ionization fraction=', tmp/sum(weight(1:ninjection))
+    endif
   end subroutine neutral_ionization
 
 subroutine transform_cartesian_to_cylindrical(x,y,zlen, r,phi,z) 
@@ -8513,62 +8908,6 @@ subroutine transform_cartesian_to_cylindrical(x,y,zlen, r,phi,z)
 !  if((phi<0) .or. (phi>=twopi)) call shift_to_zero_twopi_range(phi) 
 end subroutine transform_cartesian_to_cylindrical
 end module neutral_ionization_mod
-
-
-subroutine neutral_trajectory(rtan_beam,z_beam,r,z,phi,dl,nlen) !beam is assumed to point to +phi direction
-  use precision,only:p_
-  use constants,only:one,two
-  use boundary,only: rlim !as input
-  use boundary,only: np_lcfs, x_lcfs !as input
-  use nbi_source_parameters_module,only: rtan_central_beam,source_width
-  implicit none
-  integer,intent(in):: nlen
-  real(p_),intent(in):: rtan_beam  !tangential radius of the beamline
-  real(p_),intent(in):: z_beam  !vertical location of the starting point of the beam
-  real(p_),intent(out):: r(nlen),z(nlen),phi(nlen),dl(nlen)
-
-  real(p_)::r_start,r_end,r_port !in unit of meter
-  real(p_):: sin_alpha1,sin_alpha2,sin_alpha(nlen),alpha0
-  real(p_)::sin_alpha1_central_beam,phi_starting
-  integer:: i
-
-  r_start=maxval(x_lcfs) !the starting point where we begin to considering beam attenuation (ionization)
-  r_end=minval(x_lcfs)
-
-  sin_alpha1=rtan_beam/r_start
-  sin_alpha2=rtan_beam/r_end
-
-  r_port=maxval(rlim) !
-  alpha0=asin((rtan_central_beam-source_width/two)/r_port)
-  !  alpha0=asin(rtan_beam/r_port)
-
-
-  ! sin_alpha1_central_beam=rtan_central_beam/r_start
-  !  phi_starting=(rtan_beam- rtan_central_beam)/cos(asin(sin_alpha1_central_beam))/r_start !the toroidal angle of the location where the beam enters the plasma (the starting point where we begin to considering beam attenuation (ionization)), phi_starting is zero for the central beam
-
-  z=z_beam !beam lines are assumed to be on the horizontal plane z=z_beam
-
-  do i=1,nlen
-     sin_alpha(i)=sin_alpha1+(sin_alpha2-sin_alpha1)/(nlen-1)*(i-1)
-     r(i)=rtan_beam/sin_alpha(i)
-     !phi(i)=phi_starting+asin(sin_alpha(i))-asin(sin_alpha1)
-     phi(i)=(asin(sin_alpha(i))-alpha0)
-  enddo
-
-  do i=2,nlen
-     dl(i)=rtan_beam*sqrt(1./sin_alpha(i-1)**2-1._p_)-rtan_beam*sqrt(1./sin_alpha(i)**2-1._p_)
-  enddo
-
-!!$  open(141,file='nbi_trajectory.txt')
-!!$  do i=1,nlen
-!!$     write(141,*) i,r(i),z(i),phi(i),dl(i)
-!!$  enddo
-!!$  close(141)
-
-
-
-end subroutine neutral_trajectory
-
 
 
 subroutine ionization_cross_section_due_to_ion(energy_neutral,sigma)
@@ -9527,23 +9866,60 @@ subroutine partial_derivative(m,n,r,z,dtheta,dpsi,rpsi,rth,zpsi,zth,jacob)
 
   !write(*,*) jacob(1:m,5)
 end subroutine partial_derivative
-module diagnosis
-contains
- pure subroutine shift_to_specified_toroidal_range(a) !shift "a" into the range [0:toroidal_range]
-  use constants,only: p_, twopi
+module passing_trapped_bdry
+  use constants, only : p_
   implicit none
-  real(p_),intent(inout):: a
-  integer:: ishift
-    real(p_),parameter :: toroidal_range=twopi
+  real(p_), allocatable ::  pt_bdry_pphi(:), pt_bdry_lambda(:), pt_bdry_lambda2(:)
+  real(p_) :: pphi_min, pphi_max
+  contains
+    subroutine get_passing_trapped_bdry()
+      use constants, only :  myid
+      use twod_array_in_mc_mod, only : bfield_mc2d
+      use radial_module,only: psi_array, nflux, baxis
+      real(p_) :: bmax, bmin
+      integer :: i, u
 
- ishift=floor(a/toroidal_range)
- a=a-ishift*toroidal_range
+      allocate(pt_bdry_pphi(nflux))
+      allocate(pt_bdry_lambda(nflux))
+      allocate(pt_bdry_lambda2(nflux))
 
-end subroutine shift_to_specified_toroidal_range
+      do i=1,nflux
+         pt_bdry_pphi(i) = psi_array(i)
+!!$     bmax=bfield_mc_func(-pi, pfn(i))
+!!$     bmin=bfield_mc_func(zero, pfn(i))
+         bmax=maxval(bfield_mc2d(:,i))
+         bmin=minval(bfield_mc2d(:,i))
+         pt_bdry_lambda(i)=abs(baxis)/bmax
+         pt_bdry_lambda2(i)=abs(baxis)/bmin
+      enddo
+      pphi_max = maxval(pt_bdry_pphi)
+      pphi_min = minval(pt_bdry_pphi)
+
+      if(myid==0) then
+         open(newunit=u,file='passing_trapped_boundary.txt')
+         do i =1,nflux
+            write(u,*) pt_bdry_pphi(i), pt_bdry_lambda(i), pt_bdry_lambda2(i)
+         enddo
+         close(u)
+      endif
+    end subroutine get_passing_trapped_bdry
+
+    function pt_bdry_curve(pphi) result(lambda)
+      use interpolate_mod, only : linear_1d_interpolate
+      use radial_module,only:  nflux
+      real(p_) :: pphi, lambda
+      call linear_1d_interpolate(nflux, pt_bdry_pphi, pt_bdry_lambda, pphi, lambda) 
+    end function pt_bdry_curve
+    
+end module passing_trapped_bdry
+
+module diagnostic
+contains
 
 
 subroutine record_markers_at_fixed_time(nmarker,rg,zg,phig,weight,energy, loss, lost_time, filename)
   use constants,only: p_, twopi,one, np, myid
+  use math, only : shift_to_specified_toroidal_range
   use mpi
   implicit none
   integer,intent(in):: nmarker
@@ -9569,6 +9945,7 @@ subroutine record_markers_at_fixed_time(nmarker,rg,zg,phig,weight,energy, loss, 
   ntot= sum(recvcounts)
   if(myid==0) write(*,*) 'number of gathered markers=', ntot
   !if(myid==0) write(*,*) 'recvcounts(:)=', recvcounts(:)
+
   if(myid==0) then
      allocate(rg0(ntot),zg0(ntot),phig0(ntot))
      allocate(energy0(ntot), lost_time0(ntot))
@@ -9576,6 +9953,7 @@ subroutine record_markers_at_fixed_time(nmarker,rg,zg,phig,weight,energy, loss, 
   else
      allocate(rg0(1),zg0(0),phig0(1), energy0(1), loss0(1), lost_time0(1)) !not used, but need to be allocated (to be standard conforming)
   endif
+
   call MPI_gatherv(rg,  nmarker, MPI_double, &
        &           rg0, recvcounts, displacement,  MPI_double, 0,  mpi_COMM_world, ierr)
 
@@ -9594,7 +9972,7 @@ subroutine record_markers_at_fixed_time(nmarker,rg,zg,phig,weight,energy, loss, 
      open(newunit=u,file=filename)
      do i=1,ntot
         call shift_to_specified_toroidal_range(phig0(i))
-        write(u,'(6ES18.4E4, L2)') rg0(i), zg0(i), phig0(i),energy0(i), weight, lost_time0(i), loss0(i)
+        write(u,'(6ES18.4E4, L2)') rg0(i), zg0(i), phig0(i), energy0(i),weight, lost_time0(i), loss0(i)
      enddo
      close(u)
   endif
@@ -9641,7 +10019,7 @@ end subroutine record_markers_at_fixed_time
   end subroutine velocity_distribution
 
 
-function pphi(vpar,r,z,phi)
+function pphi_func3d(vpar,r,z,phi)
   !calculate the value of the toroidal angular momentum, in unit of Ze*Bn*Ln**2
   use precision,only:p_
   use constants,only:twopi
@@ -9649,28 +10027,28 @@ function pphi(vpar,r,z,phi)
   use magnetic_field_functions1, only : g_func , psi_func !psi_fun is a function that returns the poloidal magnetic flux
   use total_magnetic_field_mod, only : b
   implicit none
-  real(p_):: pphi,vpar,r,z,phi
+  real(p_):: pphi_func3d,vpar,r,z,phi
   real(p_):: psi_val,g_val,b_val
   psi_val=psi_func(r*Ln,z*Ln)/(bn*Ln*Ln)
   g_val=g_func(psi_func(r*Ln,z*Ln))/(bn*Ln)
   b_val=b(r,z,phi)
-  pphi=psi_val +g_val/(twopi*b_val)*vpar
-end function pphi
+  pphi_func3d=psi_val +g_val/(twopi*b_val)*vpar
+end function pphi_func3d
 
-function pphi0(vpar,r,z) !using 2D equilibrium field
+function pphi_func2d(vpar,r,z) !using 2D equilibrium field
   !toroidal angular momentum Units: pphi-> Ze*Bn*Ln**2, B --> Bn, vpar -> vn, r,z -> Ln, with Ln=1m, Bn=1T
   use precision,only:p_
   use constants,only:twopi
   use magnetic_field_functions1, only : g_func , psi_func !psi_fun is a function that returns the poloidal magnetic flux
   use magnetic_field_functions2, only : b_si
   implicit none
-  real(p_):: pphi0,vpar,r,z
+  real(p_):: pphi_func2d,vpar,r,z
   real(p_):: psi_val,g_val,b_val
   psi_val=psi_func(r,z)
   g_val=g_func(psi_func(r,z))
   b_val=b_si(r,z)
-  pphi0=psi_val +g_val/(twopi*b_val)*vpar
-end function pphi0
+  pphi_func2d=psi_val +g_val/(twopi*b_val)*vpar
+end function pphi_func2d
 
 function kinetic(vpar,r,z,phi,mu)
   !returns the value of the kinetic energy, in unit of m*vn**2
@@ -9684,7 +10062,30 @@ function kinetic(vpar,r,z,phi,mu)
 
 end function kinetic
 
-end module diagnosis
+subroutine check_trapped(rg, zg, vpar, mu, energy, trapped)
+  use constants, only : p_
+  use radial_module, only : baxis
+  use ep_parameters, only : mun
+  use passing_trapped_bdry, only : pt_bdry_curve, pphi_min, pphi_max
+  implicit none
+  real (p_), intent(in) :: rg, zg, vpar, mu, energy
+  logical, intent(out) :: trapped
+  real(p_) :: pphi, lambda
+
+  pphi= pphi_func2d(vpar, rg, zg)
+  lambda = abs(baxis)*mu*mun/energy
+
+  if(pphi> pphi_max .or. pphi < pphi_min) then
+     trapped = .false.
+  elseif ( lambda > pt_bdry_curve(pphi)) then
+     trapped = .true.
+  else
+     trapped = .false.
+  endif
+end subroutine check_trapped
+
+
+end module diagnostic
 
 
 subroutine wall_loading_3d_distribution(nmarker,r,z,phi,loss)
@@ -10171,26 +10572,38 @@ end subroutine read_nubeam_results
 
 
 
-
-
-subroutine record_lambda_pphi_for_orbit_classification(n, rg,zg, phig, mu,vpar,energy)
-  use constants, only : p_
+subroutine record_pphi_lambda_for_orbit_classification(n, rg,zg, phig, mu,vpar)
+  use constants, only : p_, one_half
   use radial_module, only : baxis
-  use ep_parameters, only : mun
-  use diagnosis, only : pphi0
-implicit none
-integer, intent(in) ::  n
-real(p_), intent(in) :: rg(n), zg(n), phig(n), mu(n), vpar(n), energy(n)
+  use ep_parameters, only : mass, mun, vn
+  use diagnostic, only : pphi_func2d, check_trapped
+  use magnetic_field_functions2, only : b_si
+  implicit none
+  integer, intent(in) ::  n
+  real(p_), intent(in) :: rg(n), zg(n), phig(n), mu(n), vpar(n)
+  real(p_) :: energy
+  logical :: trapped
+  integer :: j, u, ntrapped
 
-integer :: j, u
+  open(newunit=u,file='pphi_lambda.txt')
+  ntrapped=0
+  do j=1,n
+     energy=mu(j)*mun*b_si(rg(j),zg(j))+one_half*mass*(vpar(j)*vn)**2
+     call check_trapped(rg(j), zg(j), vpar(j), mu(j), energy, trapped)
+     write(u, *) pphi_func2d(vpar(j),rg(j),zg(j)), abs(baxis)*mu(j)*mun/energy, trapped
+     if(trapped.eqv. .true.) ntrapped = ntrapped + 1
+    enddo
+  close(u)
+write(*,*) 'Fraction of trapped fast ions =',ntrapped/real(n)
+end subroutine record_pphi_lambda_for_orbit_classification
 
-open(newunit=u,file='pphi_lambda.txt')
-do j=1,n
-   write(u,'(10(1pe14.5))') pphi0(vpar(j),rg(j),zg(j)), abs(baxis)*mu(j)*mun/energy(j)
-   enddo
-close(u)
 
-end subroutine record_lambda_pphi_for_orbit_classification
+
+
+
+
+
+
 subroutine orbit(mass,charge,energy0,pitch_angle0,phi0,rg0,zg0,dtao,n_tor_period,check_boundary_loss,orbit_file)
   use precision,only:p_
   use normalizing,only: Ln,bn
@@ -10200,7 +10613,7 @@ subroutine orbit(mass,charge,energy0,pitch_angle0,phi0,rg0,zg0,dtao,n_tor_period
   use magnetic_field_functions1, only : psi_func,q_func
   use check_loss, only: check_whether_particle_in_limiter
   use total_magnetic_field_mod, only : b
-  use diagnosis, only : kinetic,pphi !function names
+  use diagnostic, only : kinetic,pphi_func3d !function names
   implicit none
   real(p_),intent(in):: mass,charge
   real(p_),intent(in):: rg0,zg0,phi0  !initial location of guiding center, zg0 is usually zero, i.e., initial position is on midplane, phi0 is usually zero.
@@ -10216,7 +10629,7 @@ subroutine orbit(mass,charge,energy0,pitch_angle0,phi0,rg0,zg0,dtao,n_tor_period
   real(p_):: mu !magnetic moment of the guiding center (in unit of mass*vn^2/Bn)
 
   real(p_):: vpar_old
-!  real(p_):: kinetic,pphi !function names
+!  real(p_):: kinetic !function names
   real(p_):: time,p_time_old, p_time_new, phi_old,phi_new
   
   real(p_):: poloidal_period,tor_pro_angular_frequency,minor_r
@@ -10238,7 +10651,7 @@ subroutine orbit(mass,charge,energy0,pitch_angle0,phi0,rg0,zg0,dtao,n_tor_period
   time=0.0_p_ !time starts from zero
   open(33,file=orbit_file)
   write(33,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, &
-       & pphi(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
+       & pphi_func3d(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
 !       & atan2(vpar,vperp)/pi*180._p_ !,b(r,z,phi)
 
   trapped=.false.
@@ -10260,7 +10673,7 @@ subroutine orbit(mass,charge,energy0,pitch_angle0,phi0,rg0,zg0,dtao,n_tor_period
      if(vpar_old*vpar<0)  trapped=.true. !if vpar changes sign, then the particle is a trapped one.
      time=time+dtao
      !vperp=two*mu*b(r,z) !normalized by vn
-     write(33,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !, &
+     write(33,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi_func3d(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !, &
       !    & atan2(vpar,vperp)/pi*180._p_!,b(r,z)
     eps=1.5*sqrt(dr**2+dz**2)
      if((i>4) .and. (abs(r-rg0/Ln).le.eps) .and. (abs(z-zg0/Ln).le.eps)) then !indicates that the particle has return to the initial position on the poloidal plane, i.e. finish one poloidal period  
@@ -10314,7 +10727,7 @@ subroutine orbit(mass,charge,energy0,pitch_angle0,phi0,rg0,zg0,dtao,n_tor_period
      call push(dtao,mu,r,z,phi,vpar,dr,dz,dphi,dvpar)
      time=time+dtao
      !vperp=two*mu*b(r,z,phi) !normalized by vn
-     write(33,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
+     write(33,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi_func3d(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
           !& atan2(vpar,vperp)/pi*180._p_ !,b(r,z,phi)
      if(mod(j-1,4).eq.0) then  !for animation
         write(33,*)
@@ -10334,7 +10747,7 @@ subroutine orbit2(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
   use constants,only: kev,twopi,one,two,pi,one_half
   use ep_parameters,only: omegan,vn
   use check_loss, only : check_whether_particle_in_limiter
-    use diagnosis, only : kinetic,pphi !function names
+    use diagnostic, only : kinetic,pphi_func3d !function names
   implicit none
   real(p_),intent(in):: mass,charge
   real(p_),intent(in):: rg0,zg0,phi0  !initial location of guiding center, zg0 is usually zero, i.e., initial position is on midplane, phi0 is usually zero.
@@ -10353,7 +10766,7 @@ subroutine orbit2(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
   real(p_):: vpar,mu
 
   real(p_):: vpar_old
-  real(p_):: b !,kinetic,pphi !function names
+  real(p_):: b !,kinetic !function names
   real(p_):: time,p_time_old, p_time_new, phi_old,phi_new
   logical:: trapped,finish_one_poloidal,loss
   real(p_):: poloidal_period,tor_pro_angular_frequency,minor_r,wtheta,resonance,resonance2
@@ -10381,7 +10794,7 @@ subroutine orbit2(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
   time=0.0_p_ !time starts from zero
   file_unit=1001+kp
   open(file_unit,file=orbit_file)
-  write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
+  write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi_func3d(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
   !       & atan2(vpar,vperp)/pi*180._p_ !,b(r,z,phi)
 
   trapped=.false.
@@ -10403,7 +10816,7 @@ subroutine orbit2(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
      if(vpar_old*vpar<0)  trapped=.true. !if vpar changes sign, then the particle is a trapped one.
      time=time+dtao
      !vperp=two*mu*b(r,z,phi) !normalized by vn
-     write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !, &
+     write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi_func3d(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !, &
      !    & atan2(vpar,vperp)/pi*180._p_!,b(r,z,phi)
      eps=1.1*sqrt(dr**2+dz**2)
      if((i>4) .and. (abs(r-rg0/Ln).le.eps) .and. (abs(z-zg0/Ln).le.eps)) then !indicates that the particle has return to the initial position on the poloidal plane, i.e. finish one poloidal period
@@ -10424,10 +10837,10 @@ subroutine orbit2(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
         resonance2=(nh*tor_pro_angular_frequency+mode_frequency*twopi)/wtheta
         if(trapped.eqv..true.) then
            write(trapped_file_unit,'(i4,8(1pe14.5))') kp,tor_pro_angular_frequency, resonance, resonance2,wtheta,&
-                & r*Ln,z*Ln,kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),pphi(vpar,r,z,phi)*charge*bn*Ln**2
+                & r*Ln,z*Ln,kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),pphi_func3d(vpar,r,z,phi)*charge*bn*Ln**2
         else
            write(passing_file_unit,'(i4,8(1pe14.5))') kp,tor_pro_angular_frequency, resonance, resonance2,wtheta,&
-                & r*Ln,z*Ln,kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),pphi(vpar,r,z,phi)*charge*bn*Ln**2
+                & r*Ln,z*Ln,kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),pphi_func3d(vpar,r,z,phi)*charge*bn*Ln**2
 
         endif
         exit
@@ -10452,7 +10865,7 @@ subroutine orbit2(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
 !!$     call push(dtao,mu,r,z,phi,vpar,dr,dz,dphi,dvpar)
 !!$     time=time+dtao
 !!$     !vperp=two*mu*b(r,z,phi) !normalized by vn
-!!$     write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
+!!$     write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi_func3d(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
 !!$          !& atan2(vpar,vperp)/pi*180._p_ !,b(r,z,phi)
 !!$     if(mod(j-1,4).eq.0) then  !for animation
 !!$        write(file_unit,*)
@@ -10473,7 +10886,7 @@ subroutine orbit3(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
   use constants,only: kev,twopi,one,two,pi,one_half
   use ep_parameters,only:omegan,vn
   use check_loss, only : check_whether_particle_in_limiter
-  use diagnosis, only : kinetic,pphi !function names
+  use diagnostic, only : kinetic,pphi_func3d !function names
   implicit none
   real(p_),intent(in):: mass,charge
   real(p_),intent(in):: rg0,zg0,phi0  !initial location of guiding center, zg0 is usually zero, i.e., initial position is on midplane, phi0 is usually zero.
@@ -10492,7 +10905,7 @@ subroutine orbit3(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
   real(p_):: vpar,mu
 
   real(p_):: vpar_old,z_old
-  real(p_):: b!,kinetic,pphi !function names
+  real(p_):: b!,kinetic !function names
   real(p_):: time,p_time_old, p_time_new, phi_old,phi_new
   logical:: trapped,finish_one_poloidal,loss
   real(p_):: poloidal_period,tor_pro_angular_frequency,minor_r,wtheta,resonance,resonance2
@@ -10522,7 +10935,7 @@ subroutine orbit3(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
   time=0.0_p_ !time starts from zero
   file_unit=1001+kp
   open(file_unit,file=orbit_file)
-  write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
+  write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi_func3d(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !,&
   !       & atan2(vpar,vperp)/pi*180._p_ !,b(r,z,phi)
 
   trapped=.false.
@@ -10544,7 +10957,7 @@ subroutine orbit3(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
      if(vpar_old*vpar<0)  trapped=.true. !if vpar changes sign, then the particle is a trapped one.
      time=time+dtao
      !vperp=two*mu*b(r,z,phi) !normalized by vn
-     write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !, &
+     write(file_unit,'(7(1pe14.5))') time*twopi/omegan,r*Ln,z*Ln,phi,vpar, pphi_func3d(vpar,r,z,phi),kinetic(vpar,r,z,phi,mu) !, &
      !    & atan2(vpar,vperp)/pi*180._p_!,b(r,z,phi)
      !     if((i>4) .and. (abs(r-rg0/Ln).le.eps) .and. (abs(z-zg0/Ln).le.eps)) then !indicates that the particle has return to the initial position on the poloidal plane, i.e. finish one poloidal period
 
@@ -10574,10 +10987,10 @@ subroutine orbit3(kp,mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,n_tor_period,check_
         resonance2=(nh*tor_pro_angular_frequency+mode_frequency*twopi)/wtheta
         if(trapped.eqv..true.) then
            write(trapped_file_unit,'(i4,8(1pe14.5))') kp,tor_pro_angular_frequency, resonance, resonance2,wtheta,&
-                & r*Ln,z*Ln,kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),pphi(vpar,r,z,phi)*charge*bn*Ln**2
+                & r*Ln,z*Ln,kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),pphi_func3d(vpar,r,z,phi)*charge*bn*Ln**2
         else
            write(passing_file_unit,'(i4,8(1pe14.5))') kp,tor_pro_angular_frequency, resonance, resonance2,wtheta,&
-                & r*Ln,z*Ln,kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),pphi(vpar,r,z,phi)*charge*bn*Ln**2
+                & r*Ln,z*Ln,kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),pphi_func3d(vpar,r,z,phi)*charge*bn*Ln**2
 
         endif
         exit
@@ -10604,21 +11017,19 @@ end subroutine count_trapped_particles
 
 module vcrit_func_mod
 contains
-  pure real(p_) function vcrit_func(te) !vcrit and mi are all in S.I. units, te in Joule
+  pure real(p_) function vcrit_func(te) !vcrit in S.I. unit, te in Joule
     use precision,only:p_
     use constants,only: electron_mass,atom_mass_unit, two,three,four,pi, one_half, one_third
 !    use radial_module,only: psi_axis,psi_lcfs
     implicit none
-    real(p_),intent(in):: te
-    real(p_)::vte !thermal velocity of electrons
+    real(p_),intent(in) :: te
+    real(p_) :: vte !thermal velocity of electrons
     real(p_), parameter :: mD=2.014*atom_mass_unit, mT=3.016*atom_mass_unit
     !real(p_), parameter :: dt_coeff=(three*sqrt(pi)/four*one_half*(electron_mass/mD+electron_mass/mT))**one_third !assume 50-50 DT plasmam with no impurities
-    real(p_), parameter ::  dt_coeff=(three*sqrt(pi)/four*electron_mass/mD)**one_third !assume Deuterium plasmas with impurities being carbon and tungsten and assume that impurity ions are fully stripped
+    real(p_), parameter ::  dt_coeff=(three*sqrt(pi)/four*electron_mass/mD)**one_third !assume Deuterium plasmas with impurities that are of the same charge-mass ratio as Deuterium and are fully stripped.
+    !real(p_), parameter ::  dt_coeff=  !assume P11B
     vte=sqrt(two*te/electron_mass)
-    !  vcrit_func=(zeff*electron_mass/mi*three*sqrt(pi)/four)**(1._p_/3)*vte
-    !vcrit_func=(electron_mass/mi*three*sqrt(pi)/four)**(1._p_/3)*vte
-    !vcrit_func=(zeff*electron_mass/mi*three*sqrt(pi)/four)**one_third*vte !assume only one ion species
-    vcrit_func=vte*dt_coeff !assume 50-50 DT plasmam with no impurities
+    vcrit_func=vte*dt_coeff
 
   end function vcrit_func
 
@@ -10634,7 +11045,7 @@ contains
     use normalizing,only: Ln
     use radial_module,only: psi_axis,psi_lcfs
     use ep_parameters,only: mass,charge,vn,tn, cutoff_energy
-    use background_plasma,only: mi,zeff, coulomb_log
+    use background_plasma,only: zeff, coulomb_log
     use vcrit_func_mod, only : vcrit_func
     use magnetic_field_functions1, only : psi_func
     use total_magnetic_field_mod, only : b
@@ -10693,7 +11104,6 @@ contains
     vcrit=vcrit_func(te)/vn
 
     term1=ne*elementary_charge**4*coulomb_log/(fourpi*epsilon0**2*mass**2)
-    !    nu_d=(one+zeff)/(v0*vn)**3*term1 !pitch-angle scattering rate including contribution from thermal electrons and ions, wrong!
     nu_d=(zeff)/(v0*vn)**3*term1 !pitch-angle scattering rate including contribution from thermal ions
     nu_d=nu_d*tn
 
@@ -10811,7 +11221,7 @@ subroutine slowing_down_time(pfn, v1,v2, t_s)
   use vcrit_func_mod, only : vcrit_func
   use set_ne_mod, only : ne_func
   use set_te_mod, only : te_func
-
+USE, INTRINSIC :: IEEE_ARITHMETIC
   implicit none
   real(p_), intent(in) :: pfn, v1, v2
   real(p_), intent(out) :: t_s
@@ -10822,12 +11232,12 @@ subroutine slowing_down_time(pfn, v1,v2, t_s)
   vcrit_value=vcrit_func(te)
   t_se = one/nu_s_func(ne, te)
   t_s= t_se/3.*log((1+(vcrit_value/v1)**3)/((v2/v1)**3+(vcrit_value/v1)**3))
-
+!if(ieee_is_nan(t_s)) write(*,*) 'vcrit_value, t_se=',vcrit_value, t_se, nu_s_func(ne,te), ne, te
 end subroutine slowing_down_time
 
 
 subroutine estimate_average_slowing_down_time(n, rg,zg)
-  use constants, only : p_, kev
+  use constants, only : p_, kev, Mev
   use ep_parameters, only : mass, cutoff_energy, ep_distribution_type
   use nbi_source_parameters_module, only : full_energy
   use magnetic_field_functions1, only : pfn_func
@@ -10837,7 +11247,8 @@ subroutine estimate_average_slowing_down_time(n, rg,zg)
   real(p_) :: sum, v1, v2, t_s
   integer :: kp
   if (ep_distribution_type.eq."from_fusion") then
-     v1=sqrt(2*(3.5*1000*kev)/mass)
+     !v1=sqrt(2*3.5*Mev/mass) !DT fusion
+     v1=sqrt(2*2.9*Mev/mass) !p11B fusion
   else
      v1=sqrt(2*(full_energy*kev)/mass)
   endif
@@ -10846,6 +11257,7 @@ subroutine estimate_average_slowing_down_time(n, rg,zg)
   do kp = 1, n
      call  slowing_down_time(pfn_func(rg(kp),zg(kp)), v1,v2, t_s)
      sum =sum+t_s
+     !write(*,*) 't_s=', t_s
   enddo
   write(*,*) 'analytical average slowing-down time (s) =', sum/n
 
@@ -10998,33 +11410,31 @@ subroutine set_background_plasma_profiles()
   call set_ion_temperature(ti_file,unit_of_ti, ti_prof_rc_type) !after this call, ti_func is ready to be used
 
   if(ep_distribution_type .eq. "from_fusion") then
-     nD_file="best/Q5_it14939/ni.dat"
-     unit_of_nD=1.0d20
-     !nD_prof_rc_type="toroidal-flux-sqrt"
-     nD_prof_rc_type="poloidal-flux"
+     nD_file="hl/nH.txt"
+     unit_of_nD=1.0 !m^(-3)
+     nD_prof_rc_type="toroidal-flux-sqrt"
 
-     nT_file="best/Q5_it14939/ni.dat"
-     unit_of_nT=1.0d20
-     !nT_prof_rc_type="toroidal-flux-sqrt"
-     nT_prof_rc_type="poloidal-flux"
+     nT_file="hl/nB.txt"
+     unit_of_nT=1.0 !m^(-3)
+     nT_prof_rc_type="toroidal-flux-sqrt"
+
      call set_deuterium_density(nD_file, unit_of_nD, nD_prof_rc_type) 
      call set_tritium_density  (nT_file, unit_of_nT, nT_prof_rc_type)
   endif
   ti_axis= ti_func(zero)
   !---the following is diagnostic information
   if(myid==0) then
-     !     write(*,ne_profile)
-     !     write(*,te_profile)
-     !     write(*,ti_profile)
      open(newunit=u,file='profiles.txt') 
      do i=1,n
         pfn=0.+1._p_/(n-1)*(i-1)
-        write(u,'(20ES18.6E4)') sqrt(pfn), ne_func(pfn), te_func(pfn), ti_func(pfn) !, nt_func(pfn), nd_func(pfn)
+        if(ep_distribution_type .eq. "from_nbi") &
+             & write(u,'(20ES18.6E4)') sqrt(pfn), ne_func(pfn), te_func(pfn), ti_func(pfn)
+        if(ep_distribution_type .eq. "from_fusion") &
+        & write(u,'(20ES18.6E4)') sqrt(pfn), ne_func(pfn), te_func(pfn), ti_func(pfn) , nd_func(pfn), nt_func(pfn)
      enddo
      close(u)
 
-     if(myid==0) print *, 'ti_axis (kev)=', ti_axis
-
+     write(*,*) 'ti_axis (kev)=', ti_axis
   endif
 end subroutine set_background_plasma_profiles
 module pphi_unit_module
@@ -11259,7 +11669,7 @@ subroutine orbit4(mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,&
   use ep_parameters,only:omegan,vn
   use pphi_unit_module,only:  pphi_unit
   use check_loss, only : check_whether_particle_in_limiter
-  use diagnosis, only : kinetic,pphi !function names
+  use diagnostic, only : kinetic,pphi_func3d !function names
   implicit none
   real(p_),intent(in):: mass,charge
   real(p_),intent(in):: rg0,zg0,phi0  !initial location of guiding center, zg0 is usually zero, i.e., initial position is on midplane, phi0 is usually zero.
@@ -11273,7 +11683,7 @@ subroutine orbit4(mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,&
   integer:: nstep !total time step
   real(p_):: vpar,mu
   real(p_):: vpar_old,z_old
-  !  real(p_):: b !,kinetic,pphi !function names
+  !  real(p_):: b !,kinetic !function names
   real(p_):: time,p_time_old, p_time_new, phi_old,phi_new
   logical:: trapped,finish_one_poloidal,loss
   real(p_):: poloidal_period,wphi,minor_r,wtheta,resonance,resonance2
@@ -11349,16 +11759,16 @@ subroutine orbit4(mass,charge,vpar0,mu0,phi0,rg0,zg0,dtao,&
         resonance2=(nh*wphi+mode_frequency*twopi)/wtheta
 
         write(merge_file_unit,'(6(1pe14.5))') kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),&
-             & pphi(vpar,r,z,phi)*charge*bn*Ln**2/pphi_unit, &
+             & pphi_func3d(vpar,r,z,phi)*charge*bn*Ln**2/pphi_unit, &
              & resonance, resonance2,  wphi,wtheta
 
         if(trapped.eqv..true.) then
            write(trapped_file_unit,'(6(1pe14.5))') kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),&
-                & pphi(vpar,r,z,phi)*charge*bn*Ln**2/pphi_unit, &
+                & pphi_func3d(vpar,r,z,phi)*charge*bn*Ln**2/pphi_unit, &
                 & resonance, resonance2,  wphi,wtheta
         else
            write(passing_file_unit,'(6(1pe14.5))') kinetic(vpar,r,z,phi,mu)*mass*vn**2/(charge*1000),&
-                & pphi(vpar,r,z,phi)*charge*bn*Ln**2/pphi_unit,&
+                & pphi_func3d(vpar,r,z,phi)*charge*bn*Ln**2/pphi_unit,&
                 & resonance, resonance2, wphi,wtheta
         endif
         exit !finish one poloidal loop, need not further follow the orbit
@@ -11489,13 +11899,13 @@ use magnetic_field_functions1, only : psi_func
   logical,parameter:: check_boundary_loss=.true.
   character(100), parameter::orbit_file="fo_go.txt"
   real(p_):: r0,z0,phi0,vr0,vphi0,vz0
-  r= 2.1_p_
+  r= 2.2_p_
   z= 0._p_
   phi=0._p_
-  vr=1.0d6
-  vz=1.0d6
-  vphi=5d5
-  dtao=1._p_
+  vr=1.0d5
+  vz=1.0d5
+  vphi=1.d5
+  dtao=0.2_p_
 
   !--guiding-center orbit, to roughly verify the full orbit--
   bval=b(r,z,phi)
@@ -11527,7 +11937,7 @@ r0=r
 z0=z
 
    omega_local=b(r,z,phi)*charge/mass
-   dtao=twopi/omega_local/tn/8_p_ !the time-step is chosen as in terms of the local gyro-period
+   dtao=twopi/omega_local/tn/32_p_ !the time-step is chosen as in terms of the local gyro-period
 t=0._p_
 write(*,*) 'local gyro-period=',twopi/omega_local
   if(trim(full_orbit_mover).eq.'rk4') then
@@ -11550,7 +11960,7 @@ write(*,*) 'local gyro-period=',twopi/omega_local
      !call forward_half_step_for_boris(dtao,r0,z0,phi0,vr0,vz0,vphi0,r,z,phi,vr,vz,vphi) !for testing
 
 !     do kk=1,maxstep
-     do kk=1,100
+     do kk=1,300000
         call push_full_orbit_cylindrical_boris(dtao,r,phi,z,vr,vphi,vz)
 
         t=t+dtao
@@ -12246,75 +12656,18 @@ function ephi(r,z,phi) !R component of electric field
 end function ephi
 module continuous_injection_mod
 contains
-  subroutine fast_ion_stored_energy_evolution(k,kstart, kend, dtao, injection_interval,&
-       & nmarker, loss, thermalized, energy) 
-    use precision, only : p_
-    use constants, only : myid
-    use ep_parameters, only: tn, weight0
-    use mpi
-    implicit none
-    integer, intent(in) :: k, kstart, kend, injection_interval, nmarker
-    real(p_),intent(in) :: energy(nmarker), dtao
-    logical, intent(in) :: loss(nmarker), thermalized(nmarker)
-    real(p_), allocatable, save :: contribution(:), stored_energy(:)
-    real(p_), allocatable       :: stored_energy0(:)
-    logical, save :: isfirst= .true.
-    integer :: i,u, klag, kt, ierr, ntotal, k_inject
-    character(len=100) :: file_name
-    real(p_) :: weight1
 
-    weight1=weight0*injection_interval
-    ntotal=(kend-kstart)/injection_interval
-
-    if(isfirst .eqv. .true.) then
-       allocate(contribution(1:ntotal)) !contribution(klag) records the contribution to present_fast_ion_stored_energy by the particles injected at time step lagging the present step by klag
-       contribution(:) = 0
-       allocate(stored_energy(1:ntotal)) !stored_energy(j) records the fast ion stored energy at time step j+1
-       stored_energy(:)=0
-       isfirst=.false.
-    endif
-
-    if(mod(k-kstart,injection_interval)==0) then !
-       k_inject=k/injection_interval
-!!$     do i=1, nmarker
-!!$        if((loss(i).eqv. .true.) .or. (thermalized(i).eqv. .true.)) cycle
-!!$        contribution(k_inject) = contribution(k_inject) + energy(i)*weight1
-!!$     enddo
-       contribution(k_inject)=sum(energy*weight1, MASK=((loss .eqv. .false.) .and. (thermalized .eqv. .false.)) )
-!!$     do klag=1,k_inject
-!!$        stored_energy(k_inject)=stored_energy(k_inject)+ contribution(klag)
-!!$     enddo
-       stored_energy(k_inject)=sum(contribution(1:k_inject))
-    endif
-    
-      if(k==kend) then !reporting
-       allocate(stored_energy0(1:ntotal))
-       call MPI_Reduce (stored_energy,  stored_energy0, ntotal, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
-       if(myid==0) then
-          file_name='stored_energyxxxxxxx.txt' 
-          write(file_name(14:20), '(i7.7)') k
-          open(newunit=u, file=file_name)
-          do kt=1,ntotal
-             write(u,*) kt*injection_interval*dtao*tn, stored_energy0(kt)
-          enddo
-          close(u)
-       endif
-       deallocate(stored_energy0)
-    endif
-
-  end subroutine fast_ion_stored_energy_evolution
-
-  subroutine build_radial_profile(nmarker_pp, k, kstart, kend, &
-       & loss_myid, thermalized_myid, energy_myid, vpar_myid, vpar_myid_old, mu_myid, rg_myid , zg_myid)
+  subroutine build_radial_profile(nmarker_pp, k, kstart, kend, loss_myid, thermalized_myid, &
+       & energy_myid, vpar_myid, vpar_myid_old, mu_myid, rg_myid , zg_myid, vg_phi_myid)
     use precision,only:p_
+    use constants, only : mu0
     use boundary,only: np_lcfs, x_lcfs, z_lcfs
-    use radial_module,only: psi_axis, psi_lcfs, nflux, pfn, r_axis, circumference, baxis
-    use radial_module, only : radial_coor_vol, vol_int, vol, pol_area
+    use radial_module,only: psi_axis, psi_lcfs, nflux, pfn, r_axis, baxis
+    use radial_module, only : radial_coor_vol, vol_int, vol, pol_area, total_volume
     use magnetic_coordinates,only: r_mag_surf, z_mag_surf
     use constants,only : zero, one, pi, twopi, kev, dtao, injection_interval, myid, one_half, four
     use ep_parameters, only : charge, vn, tn, mass, profile_reporting_interval, weight0, flr_deposition
-    use background_plasma, only :  mi
-    use magnetic_field_functions2, only : b_si
+    use magnetic_field_functions2, only : b_si, bphi_si
     use magnetic_field_functions1, only : psi_func
     use vcrit_func_mod, only : vcrit_func
     use collision_todo_mod, only : nu_s_func
@@ -12327,21 +12680,23 @@ contains
     integer,intent(in):: nmarker_pp, k, kstart, kend
     logical,intent(in):: loss_myid(nmarker_pp), thermalized_myid(nmarker_pp)
     real(p_),intent(in) :: energy_myid(nmarker_pp), vpar_myid(nmarker_pp), vpar_myid_old(nmarker_pp)
+    real(p_),intent(in) :: vg_phi_myid(nmarker_pp)
     real(p_),intent(in) :: rg_myid (nmarker_pp), zg_myid (nmarker_pp)
     real(p_),intent(in) :: mu_myid(nmarker_pp)
     integer  :: j, kp, kpp, u, INOUT, ierr
-    real(p_) :: pfn_sqrt(nflux), ratio(nflux), net_current_density(nflux), net_current_density2(nflux)
+    real(p_) :: pfn_sqrt(nflux), ratio(nflux)
+    real(p_) :: net_current_density1(nflux), net_current_density2(nflux), net_current_density3(nflux)
     real(p_) :: pfn_val, slope, dpfn, w1, w2
     real(p_) :: r_gyro(4), z_gyro(4), r, z
     real(p_),save :: weight1
     real(p_), save :: radial_number(nflux), radial_energy(nflux),  heating_ion(nflux), heating_electron(nflux)
-    real(p_), save :: torque(nflux), jf(nflux), jf_dot_B(nflux)
+    real(p_), save :: torque(nflux), jf(nflux), jf_dot_B(nflux), jf_phi(nflux)
     real(p_) :: radial_number0(nflux), radial_energy0(nflux), heating_ion0(nflux), heating_electron0(nflux)
-    real(p_) :: torque0(nflux), jf0(nflux), jf_dot_B0(nflux)
-    real(p_) :: ne, te, nu_s, vcrit, v
+    real(p_) :: torque0(nflux), jf1(nflux), jf2(nflux), jf3(nflux)
+    real(p_) :: ne, te, nu_s, vcrit, v, bval
     character(len=100) :: file_name
     real(p_) :: total_ion_heating_power, total_electron_heating_power, total_current, total_energy, total_particle_number
-    real(p_) :: total_torque, fast_ion_current
+    real(p_) :: total_torque, If1, If2, If3
     logical, save :: isfirst= .true.
     integer, save :: u_vol_integrated, gyro_ring_points
 
@@ -12351,6 +12706,7 @@ contains
        radial_energy = zero
        jf_dot_B      = zero
        jf            = zero
+       jf_phi        = zero
        heating_ion   = zero
        heating_electron = zero
        torque = zero
@@ -12402,13 +12758,16 @@ contains
              nu_s = nu_s_func(ne,te) !slowing-down rate
              vcrit = vcrit_func(te)
              v = sqrt(2*energy_myid(kp)/mass)
+             bval=b_si(r,z)
 
              radial_number(j) = radial_number(j) + weight1
              radial_energy(j) = radial_energy(j) + weight1*energy_myid(kp)
              heating_ion(j) = heating_ion(j)           + weight1*2*energy_myid(kp)*nu_s*(vcrit/v)**3
              heating_electron(j) = heating_electron(j) + weight1*2*energy_myid(kp)*nu_s
              jf(j) = jf(j)                     + weight1*charge*vpar_myid(kp)
-             jf_dot_B(j) = jf_dot_B(j)         + weight1*charge*vpar_myid(kp)*b_si(r, z)
+             jf_dot_B(j) = jf_dot_B(j)         + weight1*charge*vpar_myid(kp)*bval
+             !jf_phi(j)= jf_phi(j)+weight1*charge*(vpar_myid(kp)*bphi_si(r,z)/bval+vg_phi_myid(kp)) !wrong, since vg_phi here alread includes vpar
+             jf_phi(j)= jf_phi(j)+weight1*charge*vg_phi_myid(kp) !correct
              torque(j) = torque(j) + mass*weight1*(vpar_myid_old(kp)-vpar_myid(kp))*vn/(dtao*tn)*rg_myid(kp)
           enddo !loop over points on a gyro-ring
 !!$       if(j .eq. 1) then
@@ -12427,8 +12786,9 @@ contains
     if(mod(k-kstart,profile_reporting_interval) == 0) then !reporting
        call MPI_Reduce (radial_number,  radial_number0, nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
        call MPI_Reduce (radial_energy,  radial_energy0, nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
-       call MPI_Reduce (jf_dot_B,      jf_dot_B0,      nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
-       call MPI_Reduce (jf     ,       jf0,            nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (jf_dot_B,      jf1,      nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (jf     ,       jf2,      nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (jf_phi ,       jf3,      nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
        call MPI_Reduce (heating_ion,    heating_ion0,   nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
        call MPI_Reduce (heating_electron, heating_electron0, nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
        call MPI_Reduce (torque, torque0, nflux-1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
@@ -12436,50 +12796,278 @@ contains
           do j=1,nflux-1
              radial_number0(j) = radial_number0(j)/vol(j)
              radial_energy0(j) = radial_energy0(j)/vol(j)
-             jf_dot_B0(j)      = jf_dot_B0(j)/vol(j)
-             jf0(j)      = jf0(j)/vol(j)
+             jf1(j)      = jf1(j)/vol(j)/abs(baxis)
+             jf2(j)      = jf2(j)/vol(j)
+             jf3(j)      = jf3(j)/vol(j)
              heating_ion0(j)   = heating_ion0(j)/vol(j)
              heating_electron0(j) = heating_electron0(j)/vol(j)
              torque0(j)   = torque0(j)/vol(j)*sign(1.d0,baxis)
           enddo
           !call ratio_of_total_current_to_fast_ion_current(ratio, nflux)
 
-          file_name="radial_profile0000000.txt"
-          write(file_name(15:21), '(i7.7)') k   
+          file_name="radial_profile00000000.txt"
+          write(file_name(15:22), '(i8.8)') k   
           open(newunit=u, file=file_name)
           do j=1,nflux-1
-             net_current_density(j) =  jf0(j)*vn*ratio(j)
-             net_current_density2(j) = jf_dot_B0(j)*vn/abs(baxis)*ratio(j)
+             net_current_density1(j) = jf1(j)*vn*ratio(j)
+             net_current_density2(j) = jf2(j)*vn*ratio(j)
+             net_current_density3(j) = jf3(j)*vn*ratio(j)
              write(u,'(30(1pe14.5))') sqrt((pfn(j)+pfn(j+1))*one_half),  radial_number0(j), &
-                  & radial_energy0(j),  jf0(j)*vn, jf_dot_B0(j)*vn/abs(baxis), & ! ne_func(pfn_sqrt(j)**2) !radial profile of fast ions and electron number desnity
-                  & net_current_density(j), net_current_density2(j), &
+                  & radial_energy0(j),  jf1(j)*vn, jf2(j)*vn, jf3(j)*vn, & ! ne_func(pfn_sqrt(j)**2) !radial profile of fast ions and electron number desnity
+                  & net_current_density1(j), net_current_density2(j), net_current_density3(j), &
                   & ratio(j), vol_int(j)/vol_int(nflux), heating_ion0(j), heating_electron0(j), torque0(j)
           enddo
           close(u)
 
           total_energy = sum(radial_energy0(1:nflux-1)*vol(1:nflux-1))
           total_particle_number = sum(radial_number0(1:nflux-1)*vol(1:nflux-1))
-          total_current = sum(net_current_density(1:nflux-1)*pol_area(1:nflux-1))
-          fast_ion_current = sum(jf0(1:nflux-1)*vn*pol_area(1:nflux-1))
+          total_current = sum(net_current_density2(1:nflux-1)*pol_area(1:nflux-1))
+          If1 = sum(jf1(1:nflux-1)*vn*pol_area(1:nflux-1))
+          If2 = sum(jf2(1:nflux-1)*vn*pol_area(1:nflux-1))
+          If3 = sum(jf3(1:nflux-1)*vn*pol_area(1:nflux-1))
+          
           total_ion_heating_power = sum(heating_ion0(1:nflux-1)*vol(1:nflux-1))
           total_electron_heating_power = sum(heating_electron0(1:nflux-1)*vol(1:nflux-1))
           total_torque = sum(torque0(1:nflux-1)*vol(1:nflux-1))
           
           write(u_vol_integrated,'(i7,30ES14.5)') k, k*dtao*tn, total_current/1000._p_,  &
                & total_ion_heating_power/(1.d6), total_electron_heating_power/(1.d6), total_energy/(1.d3), & !unit :KA, Mw, MW, KJ
-               & total_particle_number, fast_ion_current/1000._p_, total_torque !unit: N*m
+               & total_particle_number, If2/1000._p_, total_torque !unit: N*m
        endif
     endif
     if((k==kend) .and. (myid==0)) then
        close(u_vol_integrated)
-       write(*,*) "total current(kA), total_If, ion_heating_power(MW), electron_heating_power(MW), ", &
-                  & "total_energy(KJ), total_number =", &
-                  & total_current/1000._p_,  fast_ion_current/1000._p_, &
-                  & total_ion_heating_power/(1.d6), total_electron_heating_power/(1.d6), &
-                  & total_energy/(1.d3), total_particle_number
+       write(*,*) "NBCD, net current (kA)=", total_current/1000
+       write(*,'("fast ion current (kA)=",9ES14.5)') If1/1000, If2/1000, If3/1000
+       write(*,*) "ion_heating_power(MW)= ", total_ion_heating_power/(1.d6)
+       write(*,*) "electron_heating_power(MW)= ", total_electron_heating_power/(1.d6)
+       write(*,*) "total number of fast ion =",  total_particle_number
+       write(*,*) "fast ion stored energy (kJ)=", total_energy/1000
+       write(*,*) 'average pressure (kp) of fast ions=', total_energy/1000/total_volume
+       write(*,*) 'fast ions beta_toroidal=', total_energy/total_volume/(baxis**2/(2*mu0))
        write(*,*) "total_torque (N*m)=", total_torque
     endif
   end subroutine build_radial_profile
+
+
+  subroutine build_2D_profile(nmarker_pp, k, kstart, kend, loss_myid, thermalized_myid, &
+       & rg_myid , zg_myid, phig_myid, mu_myid, vpar_myid, energy_myid, vphi_myid)
+    use constants,only : p_, zero, one, pi, twopi, kev, dtao, injection_interval, myid, one_half, four, Mw
+    use boundary, only : zlim
+    use math, only : grow_array, phi_principal
+    use ep_parameters, only : vn, charge, profile_reporting_interval, weight0, flr_deposition, mass, mun
+    use gyro_ring_mod, only : gyro_ring
+    use diagnostic, only : check_trapped, pphi_func2d
+    use rzphi_grid, only : rgrid, zgrid, phigrid, dr, dz, dphi, mr, mz,mphi, dvol
+    use vcrit_func_mod, only : vcrit_func
+    use collision_todo_mod, only : nu_s_func
+    use set_ne_mod, only : ne_func
+    use set_te_mod, only : te_func
+    use magnetic_field_functions1, only : pfn_func
+    use radial_module, only : baxis
+    use mpi
+    implicit none
+    integer,intent(in):: nmarker_pp, k, kstart, kend
+    logical,intent(in):: loss_myid(nmarker_pp), thermalized_myid(nmarker_pp)
+    real(p_),intent(in) :: rg_myid(nmarker_pp), zg_myid(nmarker_pp), phig_myid(nmarker_pp)
+    real(p_),intent(in) :: mu_myid(nmarker_pp), vpar_myid(nmarker_pp), energy_myid(nmarker_pp),vphi_myid(nmarker_pp)
+    integer  :: i,j, kphi,kp, kpp, u, ierr
+    real(p_) :: r_gyro(4), z_gyro(4)
+    real(p_),save :: weight1
+    real(p_), save, allocatable :: mc_r(:), mc_z(:), mc_phi(:), mc_mu(:), mc_vpar(:), mc_vphi(:)
+    real(p_), save, allocatable :: mc_pphi(:), mc_lambda(:)
+    real(p_), save :: num(mr,mz), num_trapped(mr,mz), es(mr,mz), rphi_num(mr,mphi)
+    real(p_), save :: jf_phi(mr,mz), jf_phi_trapped(mr,mz)
+    real(p_), save :: heating_ion(mr,mz), heating_ele(mr,mz)
+    real(p_) :: heating_ion0(mr,mz), heating_ele0(mr,mz)
+    real(p_) :: num0(mr,mz), num_trapped0(mr,mz), es0(mr,mz), rphi_num0(mr,mphi)
+    real(p_) :: jf_phi0(mr,mz), jf_phi_trapped0(mr,mz)
+    character(len=100) :: file_name
+    logical, save :: isfirst= .true.
+    integer, save :: gyro_ring_points, nmax, nmax_gyro, n_mc=0, n_mc_gyro=0, ntrapped=0, npassing=0
+    integer :: ntrapped0, npassing0
+    logical :: trapped
+    real(p_) :: ne, te, nu_s, vcrit, v, pfn_val
+
+    if(isfirst .eqv. .true.) then
+       isfirst=.false.
+       num(:,:) = zero
+       num_trapped(:,:) = zero
+        es(:,:) = zero
+       jf_phi(:,:) = zero
+       jf_phi_trapped(:,:) = zero
+       heating_ele(:,:) = zero
+       heating_ion(:,:) = zero
+       rphi_num(:,:) = zero
+       if(FLR_deposition .eqv. .false.) then
+          weight1 = weight0*injection_interval
+          gyro_ring_points =1
+       else
+          gyro_ring_points = 4 
+          weight1 = weight0*injection_interval/gyro_ring_points
+       endif
+
+       nmax = nmarker_pp*200
+       !allocate(mc_phi (nmax))
+       !allocate(mc_mu  (nmax))
+       !allocate(mc_vpar(nmax))
+       !allocate(mc_vphi(nmax))
+       allocate(mc_pphi(nmax))
+       allocate(mc_lambda(nmax))
+       nmax_gyro = nmax*gyro_ring_points
+       allocate(mc_r   (nmax_gyro))
+       allocate(mc_z   (nmax_gyro))
+    endif
+
+    if(n_mc + nmarker_pp > nmax) then
+       nmax = nmax + nmarker_pp
+       !call grow_array(mc_phi,   nmax)
+       !call grow_array(mc_vpar,  nmax)
+       !call grow_array(mc_mu,    nmax)
+       !call grow_array(mc_vphi,  nmax)
+       call grow_array(mc_pphi,    nmax)
+       call grow_array(mc_lambda,  nmax)
+       nmax_gyro = nmax_gyro + nmarker_pp*gyro_ring_points
+       call grow_array(mc_r,     nmax_gyro) !keep the data untouched and increase the array size
+       call grow_array(mc_z,     nmax_gyro)
+       if(myid==0) write(*,*) 'The array size is increased'
+    endif
+
+
+    if(mod(k-kstart,injection_interval) == 0) then
+       do kp=1, nmarker_pp
+          if((loss_myid(kp).eqv..true.) .or. (thermalized_myid(kp).eqv..true.)) cycle !loss(kp) must be checked because,
+          !when the FLR effect is included, some guiding-centers of lost particles are still within LCFS,
+          !which will otherwise be wrongly considered to be not lost and contribute to the density of fast ions near the edge.
+          n_mc = n_mc + 1
+          !mc_phi (n_mc)=phig_myid(kp)
+          !mc_vpar(n_mc)=vpar_myid(kp)
+          !mc_mu  (n_mc)=mu_myid(kp)
+          !mc_vphi(n_mc)=vphi_myid(kp)
+          mc_pphi(n_mc)= pphi_func2d(vpar_myid(kp), rg_myid(kp), zg_myid(kp))
+          mc_lambda(n_mc) = abs(baxis)*mu_myid(kp)*mun/energy_myid(kp)
+
+          call check_trapped(rg_myid(kp), zg_myid(kp), vpar_myid(kp), mu_myid(kp), energy_myid(kp), trapped)
+          if(trapped .eqv. .true.) then
+             ntrapped = ntrapped +1
+          else
+             npassing = npassing +1
+          endif
+          kphi=floor((phi_principal(phig_myid(kp))- phigrid(1))/dphi)+1
+
+          if(FLR_deposition .eqv. .false.) then
+             r_gyro(1)= rg_myid(kp)
+             z_gyro(1)= zg_myid(kp)
+          else
+             call gyro_ring(rg_myid(kp), zg_myid(kp), mu_myid(kp), r_gyro, z_gyro)
+          endif
+
+          do kpp = 1, gyro_ring_points
+             n_mc_gyro = n_mc_gyro + 1
+             mc_r   (n_mc_gyro)=r_gyro(kpp)
+             mc_z   (n_mc_gyro)=z_gyro(kpp)
+             i=floor((r_gyro(kpp)-rgrid(1))/dr)+1
+             j=floor((z_gyro(kpp)- zgrid(1))/dz)+1
+             if(i>mr .or. j>mr) stop 'exceeding array boundary in build_2d_profile'
+
+             num(i,j)=num(i,j)+ weight1
+             if(trapped .eqv. .true.) num_trapped(i,j)=num_trapped(i,j)+ weight1
+
+            es(i,j) = es(i,j) + weight1*energy_myid(kp)
+             
+             jf_phi(i,j)= jf_phi(i,j) + weight1*vphi_myid(kp)
+             if(trapped .eqv. .true.) jf_phi_trapped(i,j) = jf_phi_trapped(i,j)+ weight1*vphi_myid(kp)
+             rphi_num(i,kphi) = rphi_num(i,kphi) + weight1
+
+             pfn_val=pfn_func(r_gyro(kpp), z_gyro(kpp))
+             if(pfn_val>1) cycle !if the region outside of Lcfs is included, the electron heating becomes larger near the edge. do not understand why, may be because ne and te is very low there
+             ne = ne_func(pfn_val)
+             te = abs(te_func(pfn_val))*kev !abs to avoid negative te
+             nu_s = nu_s_func(ne,te) !slowing-down rate
+             vcrit = vcrit_func(te)
+             v = sqrt(2*energy_myid(kp)/mass)
+
+             heating_ion(i,j) = heating_ion(i,j) + weight1*2*energy_myid(kp)*nu_s*(vcrit/v)**3
+             heating_ele(i,j) = heating_ele(i,j) + weight1*2*energy_myid(kp)*nu_s
+
+          enddo
+       enddo
+
+    endif
+
+    !if(mod(k-kstart,profile_reporting_interval) == 0) then !reporting
+    if(k == kend) then !reporting
+!!$       file_name='mc_marker000000.txt'
+!!$       write(file_name(10:15),'(i6.6)') myid
+!!$       open(newunit=u, file=file_name)
+!!$       do kp=1, n_mc
+!!$          write(u,*) mc_pphi(kp), mc_lambda(kp)
+!!$       enddo
+!!$       close(u)
+
+       call MPI_Reduce (num,  num0, mr*mz, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (num_trapped, num_trapped0, mr*mz, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (es,    es0, mr*mz, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (jf_phi, jf_phi0, mr*mz, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (jf_phi_trapped, jf_phi_trapped0, mr*mz, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+
+       call MPI_Reduce (heating_ion, heating_ion0, mr*mz, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (heating_ele, heating_ele0, mr*mz, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+
+       call MPI_Reduce (rphi_num,  rphi_num0, mr*mphi, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (ntrapped,  ntrapped0, 1, MPI_integer, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       call MPI_Reduce (npassing,  npassing0, 1, MPI_integer, MPI_sum, 0, MPI_COMM_WORLD, ierr)
+       if(myid==0) then
+          !write(*,*) 'In steady-state, trapped particles=', ntrapped0
+          !write(*,*) 'In steady-state, passing particles=', npassing0
+          write(*,*) 'In steady-state, trapped fraction=', ntrapped0/real(ntrapped0+npassing0)
+          write(*,*) 'Fast ion number =', sum(num0)
+          write(*,*) 'Fast ion stored energy (kJ) =', sum(es0)/1000
+          write(*,*) 'Heating Power to ions (MW)=',      sum(heating_ion0)/MW
+          write(*,*) 'Heating Power to electrons (MW)=', sum(heating_ele0)/MW
+          
+          num0=num0/dvol
+          num_trapped0=num_trapped0/dvol
+          es0 =es0/dvol
+          jf_phi0= jf_phi0/dvol*vn*charge
+          jf_phi_trapped0=jf_phi_trapped0/dvol*vn*charge
+          rphi_num0=rphi_num0/dvol
+          heating_ion0=heating_ion0/dvol
+          heating_ele0=heating_ele0/dvol
+
+          write(*,*) 'Fast ion current (kA)=', sum(jf_phi0)*dr*dz/1000
+          write(*,*) 'Trapped fast ion current (kA)=', sum(jf_phi_trapped0)*dr*dz/1000
+
+          
+          file_name="poloidal2d00000000.txt"
+          write(file_name(11:18), '(i8.8)') k   
+          open(newunit=u, file=file_name)
+          do i=1,mr
+             do j=1,mz
+                write(u, '(30ES14.5)') rgrid(i),zgrid(j), num0(i,j), num_trapped0(i,j), &
+                     & jf_phi0(i,j), jf_phi_trapped0(i,j), es0(i,j), heating_ion0(i,j),  heating_ele0(i,j)
+             enddo
+             write(u,*)
+          enddo
+          close(u)
+
+          file_name="toroidal2d00000000.txt"
+          write(file_name(11:18), '(i8.8)') k   
+          open(newunit=u, file=file_name)
+          do i=1,mr
+             do kphi=1,mphi-1
+                write(u,*) rgrid(i), phigrid(kphi), rphi_num0(i,kphi)
+             enddo
+             write(u,*) rgrid(i), phigrid(mphi), rphi_num0(i,1) !periodic boundary condtion
+             write(u,*)
+          enddo
+          close(u)
+       endif
+    endif
+
+  end subroutine build_2D_profile
+
+  
   
   
   subroutine build_velocity_distribution(k,kstart, kend, injection_interval, &
@@ -12542,25 +13130,25 @@ contains
        call MPI_Reduce (twod_dist,  twod_dist0, m*n, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
 
        if((myid==0)) then
-          file_name='velocity_distxxxxxxx.txt' 
-          write(file_name(14:20), '(i7.7)') k
+          file_name='velocity_distxxxxxxxx.txt' 
+          write(file_name(14:21), '(i8.8)') k
           open(newunit=u, file=file_name)
           do j=1,m
              write(u,*) e(j), energy_dist0(j)
           enddo
           close(u)
-          call compare_numerical_with_analytical_slowing_down_distribution(k,e, energy_dist, m)
+          !call compare_numerical_with_analytical_slowing_down_distribution(k,e, energy_dist, m)
 
-          file_name='pitch_angle_distxxxxxxx.txt' 
-          write(file_name(17:23), '(i7.7)') k
+          file_name='pitch_angle_distxxxxxxxx.txt' 
+          write(file_name(17:24), '(i8.8)') k
           open(newunit=u, file=file_name)
           do j=1,n
              write(u,*) pitch_angle(j), pitch_angle_dist0(j)
           enddo
           close(u)
 
-          file_name='twod_velocity_distxxxxxxx.txt' 
-          write(file_name(19:25), '(i7.7)') k
+          file_name='twod_velocity_distxxxxxxxx.txt' 
+          write(file_name(19:26), '(i8.8)') k
           open(newunit=u, file=file_name)
           do j=1,m
              do j2=1,n
@@ -12577,7 +13165,6 @@ subroutine compare_numerical_with_analytical_slowing_down_distribution(k, energy
   use precision, only : p_
   use vcrit_func_mod
   use constants, only : kev
-  use background_plasma,only: mi
   use ep_parameters,only: mass
   use set_te_mod, only : te_func
   implicit none
@@ -12599,8 +13186,8 @@ subroutine compare_numerical_with_analytical_slowing_down_distribution(k, energy
      f_velocity_analytic(i)=1/(1+v(i)**3/vcrit**3)*v(i)**2
   enddo
 
-  file_name="compare_dist0000000.txt"
-  write(file_name(13:19), '(i7.7)') k
+  file_name="compare_dist000000000.txt"
+  write(file_name(13:21), '(i9.9)') k
   open(newunit=u, file=file_name)
   do i=1, m
      write(u,*) v(i), f_velocity(i), f_velocity_analytic(i)
@@ -12626,28 +13213,29 @@ subroutine ratio_of_total_current_to_fast_ion_current(ratio, nflux)
   real(p_) :: x, ft, L31, bsq_av, integral, nu, y2(nflux-1), radial_array(nflux)
   real(p_) :: te, ne, zi, ni, logLe, tao, q
   real(p_) :: coulomb_log_ei_func, eps, wb !bounce frequency
-  integer :: j, npt
+  integer :: j, npt, u
 
+  if(myid==0) open(newunit=u,file='nu_e_star.txt')
+  zi=1.0
   do j=2, nflux
      te=te_func(pfn(j))*kev
      ne=ne_func(pfn(j))
-     zi=zeff
      ni=ne/zi
      logLe=coulomb_log_ei_func(pfn(j))
      tao = 12*pi**1.5*epsilon0**2*sqrt(electron_mass)*te**1.5/(sqrt(2.d0)*ni*zi**2*elementary_charge**4*logLe)
      q=q_func(psi_axis+pfn(j)*(psi_lcfs-psi_axis))
      eps =(maxval(r_mag_surf(:,j))-minval(r_mag_surf(:,j)))/(2*R_axis)
      wb=sqrt(eps)*sqrt(te/electron_mass)/(q*R_axis)
-     nu=1/tao/(eps*wb) !thi is nu_e_star
-
+     nu=1/tao/(eps*wb) !this is nu_e_star
+     !nu=0. !for testing
      call two_flux_surface_averages(j, bsq_av, integral)
      ft=1-3./4.*bsq_av*integral
      x= ft/(one+(one-0.1_p_*ft)*sqrt(nu)+0.5_p_*(one-ft)*nu/zeff)
      L31=(one+1.4_p_/(zeff+one))*x-1.9_p_*x*x/(zeff+one)+0.3_p_*x**3/(zeff+one)+0.2_p_*x**4/(zeff+one)
      ratio(j)=1-zf/zeff*(1-L31)
-! if(myid==0) write(*,'(30ES18.5)') pfn(j), nu, 1/tao, wb, ft, tao, eps, eps*R_axis
+ if(myid==0) write(u,'(30ES18.5)') pfn(j), nu, 1/tao, wb, ft, ratio(j) !,eps, eps*R_axis
   enddo
-
+if(myid==0) close(u)
   !use spline interpolation to obtain ratio at the magnetic axis
   do j=2,nflux  
      radial_array(j)=j
@@ -12714,14 +13302,12 @@ end subroutine two_flux_surface_averages
 
 end module continuous_injection_mod
 
-
-
 module particle_array
   use precision, only : p_
   implicit none
   integer :: nmarker_myid
   real(p_), dimension(:), allocatable,save :: rg_myid, zg_myid, phig_myid, mu_myid, vpar_myid, energy_myid
-  real(p_), dimension(:), allocatable,save :: vpar_myid_old
+  real(p_), dimension(:), allocatable,save :: vpar_myid_old, vg_phi_myid
   logical,  dimension(:), allocatable,save :: lost_myid, thermalized_myid
   real(p_), dimension(:), allocatable,save :: thermalized_time_myid, lost_time_myid
 contains
@@ -12748,6 +13334,7 @@ contains
     allocate(lost_time_myid(nmarker_myid))
     allocate(thermalized_myid(nmarker_myid))
     allocate(thermalized_time_myid(nmarker_myid))
+    allocate(vg_phi_myid(nmarker_myid))
     do i=1, nmarker_myid
        kp = i + shift
        rg_myid(i)   =  rg(kp)
@@ -12764,96 +13351,72 @@ contains
     thermalized_time_myid(:) = 0
   end subroutine initialize_particle_array
 end module particle_array
-module DT_fusion_reactivity
-  use precision, only : p_
+module fusion_reactivity
+  use constants, only : p_, MeV, myid
   implicit none
-  integer,parameter :: nd=26
-  real(p_),save :: temperature_DT(0:nd), sigma_v(0:nd)
+  integer, parameter :: ndata_max=3000
+  integer,save :: ndata
+  real(p_),save :: fusion_temperature(0:ndata_max), sigma_v(0:ndata_max)
+  integer,parameter :: n_alpha_per_fusion=3 !3 for p11B fusion
+  real(p_), parameter :: energy_per_fusion=8.7*Mev !8.7 MeV for p11B fusion, 17.6 MeV DT fusion
 contains
-  subroutine set_DT_fusion_reactivity()
-    !Ref.: https://www.osti.gov/servlets/purl/5992170
-    !https://www.osti.gov/servlets/purl/4014032
-    !assume D and T take the same temperature
-    !temperature (kev)    <sigma*v> (m^3/s)
-!!$    temperature_DT(0)=0.0 ;   sigma_v(0)= 0.0
-!!$    temperature_DT(1)=1.0 ;   sigma_v(1)= 6.27E-27 
-!!$    temperature_DT(2)=2.0 ;   sigma_v(2)= 2.83E-25 
-!!$    temperature_DT(3)=3.0 ;   sigma_v(3)= 1.81E-24 
-!!$    temperature_DT(4)=4.0 ;   sigma_v(4)= 5.86E-24 
-!!$    temperature_DT(5)=5.0 ;   sigma_v(5)= 1.35E-23
-!!$    temperature_DT(6)=6.0 ;   sigma_v(6)= 2.53E-23
-!!$    temperature_DT(7)=7.0 ;   sigma_v(7)= 4.14E-23
-!!$    temperature_DT(8)=8.0 ;   sigma_v(8)= 6.17E-23
-!!$    temperature_DT(9)=9.0 ;   sigma_v(9)= 8.57E-23
-!!$    temperature_DT(10)=10.0 ; sigma_v(10)= 1.13E-22
-!!$    temperature_DT(11)=20.0 ; sigma_v(11)= 4.31E-22
-!!$    temperature_DT(12)=30.0 ; sigma_v(12)= 6.65E-22
-!!$    temperature_DT(13)=40.0 ; sigma_v(13)= 7.93E-22
-!!$    temperature_DT(14)=50.0 ; sigma_v(14)= 8.54E-22
-!!$    temperature_DT(15)=60.0 ; sigma_v(15)= 8.76E-22
-!!$    temperature_DT(16)=70.0 ; sigma_v(16)= 8.76E-22
-!!$    temperature_DT(17)=80.0 ; sigma_v(17)= 8.64E-22
-!!$    temperature_DT(18)=90.0 ; sigma_v(18)= 8.46E-22
-!!$
-    temperature_DT(0)=0.0
-    temperature_DT(1)=1.0
-    temperature_DT(2)=1.5 
-    temperature_DT(3)=2.0
-    temperature_DT(4)=2.5 
-    temperature_DT(5)=3.0
-    temperature_DT(6)=3.5 
-    temperature_DT(7)=4.0
-    temperature_DT(8)=4.5
-    temperature_DT(9)=5.0
-    temperature_DT(10)=5.5
-    temperature_DT(11)=6.0
-    temperature_DT(12)=6.5
-    temperature_DT(13)=7.0
-    temperature_DT(14)=7.5
-    temperature_DT(15)=8.0
-    temperature_DT(16)=8.5
-    temperature_DT(17)=9.0
-    temperature_DT(18)=9.5 
-    temperature_DT(19)=10.0
-    temperature_DT(20)=15
-    temperature_DT(21)=20
-    temperature_DT(22)=25
-    temperature_DT(23)=30
-    temperature_DT(24)=35
-    temperature_DT(25)=40
-    temperature_DT(26)=45    
+  subroutine set_fusion_reactivity()
+    integer :: u, j
 
-sigma_v(0)=0
-sigma_v(1)=0.54835E-26
-sigma_v(2)=0.58917e-25
-sigma_v(3)=0.26266e-24
-sigma_v(4)=0.76096e-24
-sigma_v(5)=0.17128e-23
-sigma_v(6)=0.32740e-23
-sigma_v(7)=0.55843e-23
-sigma_v(8)=0.87602e-23
-sigma_v(9)=0.12891e-22
-sigma_v(10)=0.18039e-22
-sigma_v(11)=0.24237e-22
-sigma_v(12)=0.31494e-22
-sigma_v(13)=0.39797e-22
-sigma_v(14)=0.49111e-22
-sigma_v(15)=0.59391e-22
-sigma_v(16)=0.70576e-22
-sigma_v(17)=0.82598e-22
-sigma_v(18)=0.95385e-22
-sigma_v(19)=0.10886e-21
-sigma_v(20)=0.26542e-21
-sigma_v(21)=0.42434e-21
-sigma_v(22)=0.55940e-21
-sigma_v(23)=0.66532e-21
-sigma_v(24)=0.74479e-21
-sigma_v(25)=0.80252e-21
-sigma_v(26)=0.84312e-21
+    open(newunit=u,file='hl/pB_sigmav.txt', status='old')
+    do j = 1, ndata_max
+       ! temperature (kev)    <sigma*v> (m^3/s)
+       read(u,*,end=111) fusion_temperature(j),sigma_v(j) 
+    enddo
+111 close(u)
 
+    ndata=j-1
+    if(myid==0) write(*,*) 'number of fusion reactivity data-points=',ndata
+    if(ndata.le.1) stop 'need more fusion reactivity data-points'
+!!$    block
+!!$      if(myid==0) then
+!!$         open(newunit=u,file='hl/pB_sigmav.txt2')
+!!$         do j=1,ndata
+!!$            write(u,*)  fusion_temperature(j),sigma_v(j)
+!!$         enddo
+!!$         close(u)
+!!$      endif
+!!$    endblock
 
-  end subroutine set_DT_fusion_reactivity
-end module DT_fusion_reactivity
+  end subroutine set_fusion_reactivity
+end module fusion_reactivity
+
+module energy_spectrum_p11b !p11B fusion born alpha particle energy spectrum
+  use constants, only : p_, myid
+  implicit none
+  integer, parameter :: ndata_max=3000
+  integer,save :: ndata
+  real(p_),save :: en(0:ndata_max), pdf(0:ndata_max)
+  real(p_),save :: en_min, en_max,pdf_p11b_max
+contains
+  subroutine set_energy_spectrum_p11b()
+    integer :: u, j
+    open(newunit=u,file='hl/pB_energy_spectrum.txt', status='old')
+    do j = 1, ndata_max
+       read(u,*,end=111) en(j), pdf(j)        ! Mev     probability density function
+    enddo
+111 close(u)
+
+    ndata=j-1
+    if(myid==0) write(*,*) 'number of p11B fusion born alpha particle energy spectrum data-points=',ndata
+    if(ndata.le.1) stop 'need more energy spectrum data-points'
+    pdf_p11b_max=maxval(pdf)
+    en_min=en(1)
+    en_max=en(ndata)
+  end subroutine set_energy_spectrum_p11b
+
+  function pdf_p11b(en0)
+    use interpolate_mod, only : linear_1d_interpolate_nonuniform
+    real(p_) :: pdf_p11b, en0
+    call linear_1d_interpolate_nonuniform(ndata,en,pdf,en0,pdf_p11b)
+  end function
+end module energy_spectrum_p11b
+
 
 module fusion_rate_mod
   use precision, only : p_
@@ -12862,9 +13425,9 @@ module fusion_rate_mod
   real(p_),save :: fusion_rate(nflux)
 contains
   subroutine  calculate_radial_profile_of_fusion_rate()
-    use constants, only : myid,kev
+    use constants, only : myid,Mev, MW
     use magnetic_coordinates,only: pfn
-    use DT_fusion_reactivity, only : nd, temperature_DT, sigma_v
+    use fusion_reactivity, only : ndata, fusion_temperature, sigma_v, energy_per_fusion
     use set_ne_mod, only : ne_func
     use set_ti_mod, only : ti_func
     use deuterium_density_mod, only : nd_func
@@ -12873,18 +13436,19 @@ contains
     use radial_module, only : vol
     implicit none
     real(p_) :: ti0, den_h2, den_h3, sigma_v0
+
     integer :: j,u
 
     do j=1,nflux-1
        ti0=ti_func(pfn(j))
-       call linear_1d_interpolate_nonuniform(nd,temperature_DT,sigma_v,ti0,sigma_v0)
+       call linear_1d_interpolate_nonuniform(ndata,fusion_temperature,sigma_v,ti0,sigma_v0)
 !!$       den_h2=0.5*ne_func(pfn(j))
 !!$       den_h2=nd_func(pfn(j))
 !!$       den_h3=nt_func(pfn(j))
        fusion_rate(j)=nd_func(pfn(j))*nt_func(pfn(j))*sigma_v0
     enddo
     !if(myid==0) write(*,*) 'ne=', ne_func(0.5d0), 'sigma_v0=', sigma_v0, 'ti0=', ti_func(0.5d0)
-    if(myid==0) write(*,*) "total fusion power (MW) : ", sum(fusion_rate(:nflux-1)*vol(:))*17.6*1000*kev/10**6
+    if(myid==0) write(*,*) "total fusion power (MW) : ", sum(fusion_rate(:nflux-1)*vol(:)) *energy_per_fusion/MW
     
     if(myid==0)  then
        open(newunit=u,file='fusion_rate.txt')
@@ -12900,11 +13464,12 @@ module alpha_particle_source_mod
 contains
   subroutine set_alpha_particle_source(nmarker,rg,zg,phig,mu,vpar,energy, weight0)
     use precision, only : p_
-    use constants, only : kev,myid
+    use constants, only : myid, Mev
     use ep_parameters, only : mass,vn,mun
-    use DT_fusion_reactivity, only : set_DT_fusion_reactivity
+    use fusion_reactivity, only : set_fusion_reactivity
     use fusion_rate_mod, only : calculate_radial_profile_of_fusion_rate
     use magnetic_field_functions2, only: bphi_si, br_si, bz_si, b_si
+    use energy_spectrum_p11b, only : set_energy_spectrum_p11b
     implicit none
     integer, intent(in) :: nmarker
     real(p_), intent(out) :: rg(nmarker), zg(nmarker), phig(nmarker)
@@ -12913,7 +13478,8 @@ contains
     real(p_) :: v(nmarker), vr(nmarker), vphi(nmarker), vz(nmarker) !in local Cartesian coordinate system at marker location
     real(p_):: bval(nmarker),br_val(nmarker),bz_val(nmarker),bphi_val(nmarker), zeta(nmarker)
     integer :: j,u
-    call set_DT_fusion_reactivity()
+    call set_fusion_reactivity()
+    call set_energy_spectrum_p11b()
     call calculate_radial_profile_of_fusion_rate()
     call load_alpha_particle_markers(nmarker, r, phi, z, vr, vphi, vz, energy, weight0)
     do j=1,nmarker
@@ -12934,7 +13500,7 @@ contains
     if(myid==0) then
        open(newunit=u,file='alpha_source2.txt')
        do j=1,nmarker
-          write(u,"(20ES16.6E3)") r(j), z(j), rg(j), zg(j), 0.5*mass*(vr(j)**2+vz(j)**2+vphi(j)**2)/(1000*kev)
+          write(u,"(20ES16.6E3)") r(j), z(j), rg(j), zg(j), 0.5*mass*(vr(j)**2+vz(j)**2+vphi(j)**2)/Mev
        enddo
        close(u)
     endif
@@ -12942,16 +13508,18 @@ contains
 
   subroutine load_alpha_particle_markers(nmarker, r, phi, z, vr, vphi, vz, energy, weight0)
     use precision,only:p_
-    use constants,only:one,twopi,pi,two,kev,fourpi, dtao,myid
+    use constants,only:one,twopi,pi,two,Mev,fourpi, dtao,myid, Mw
     use magnetic_coordinates,only: mpoloidal,nflux, pfn,jacobian
     use ep_parameters, only : mass, tn
     use radial_module, only : pfn_inner, pfn_bdry
     use radial_module, only : vol
+    use fusion_reactivity, only : n_alpha_per_fusion
     use fusion_rate_mod, only : fusion_rate
     use interpolate_mod, only : linear_1d_interpolate
     use boundary, only : x_lcfs, z_lcfs
     use random_mod, only : sub_random_yj
     use magnetic_field_functions1, only : pfn_func
+    use energy_spectrum_p11b, only : pdf_p11b, pdf_p11b_max, en_min, en_max
     implicit none
     integer, intent(in) :: nmarker
     real(p_), intent(out) :: r(nmarker), phi(nmarker), z(nmarker)
@@ -12965,9 +13533,9 @@ contains
     real(p_) :: vx(nmarker), vy(nmarker)
     real(p_) :: theta_v0
     real(p_):: pos1,pos2, r_min, r_max, z_min, z_max, r_val, z_val
-    real(p_):: abs_jacobian_func, tmp(mpoloidal,nflux), pos_max,fusion_rate0
+    real(p_):: abs_jacobian_func, tmp(mpoloidal,nflux), pos_max,fusion_rate0, en
     integer:: i,j, u
- 
+
     do j=1,nflux
        tmp(:,j)=jacobian(:,j)*fusion_rate(j)
     enddo
@@ -13008,7 +13576,7 @@ contains
     z_min=minval(z_lcfs)
     z_max=maxval(z_lcfs)
     pos_max=maxval(fusion_rate(:))*r_max
-    
+
     do i=1,nmarker
        do j=1,max_try !rejection method to generate nonuniform random numbers
           call sub_random_yj(0,next_seed,rannum1) !0 means using last random number as iseed 
@@ -13029,14 +13597,45 @@ contains
        enddo
        !if(j.eq.max_try+1) stop "***stop**, rejection method is not successful in generating distribution", 'j=',j
     enddo
-   
+
     do i=1,nmarker !setting toroidal coordinate of particles
        call sub_random_yj(0,next_seed,rannum3)
        phi(i)=twopi*rannum3
     enddo
 
     !sampling in the velocity space
-    energy(:)=3.5*1000*kev
+!!$    energy(:)=2.9*Mev
+    do i=1, nmarker    
+       do j=1,max_try !rejection method to generate nonuniform random numbers
+          call sub_random_yj(0,next_seed,rannum1) !0 means using last random number as iseed 
+          en = en_min + rannum1*(en_max - en_min) !scale the random number
+          pos1=pdf_p11b(en)
+          call sub_random_yj(0,next_seed,pos2) 
+          pos2=pos2*pdf_p11b_max !scale the random number
+          if(pos1<pos2) then
+             cycle
+          else
+             energy(i)=en*Mev
+             exit
+          endif
+       enddo
+    enddo
+
+!!$    block !for testing
+!!$      integer, parameter :: m=100
+!!$      real(p_) :: de,  a(m)
+!!$      a=0
+!!$      de=(en_max-en_min)/(m-1)
+!!$      if (myid==0) then
+!!$         do i=1, nmarker
+!!$            j=1+(energy(i)/Mev-en_min)/de
+!!$            a(j)=a(j)+1
+!!$         enddo
+!!$         do j=1,m
+!!$            write(*,*) en_min+de*(j-1), a(j)
+!!$         enddo
+!!$      endif
+!!$    endblock
     v(:)=sqrt(2*energy(:)/mass)
     do i=1, nmarker    !using spherical coordinates for velocity
        do j=1,max_try !rejection method to generate nonuniform random numbers
@@ -13073,14 +13672,13 @@ contains
 !!$          call sub_random_yj(0,next_seed,rannum1) !0 means using last random number as iseed
 !!$          vz(i)=sqrt(v(i)**2-vx(i)**2-vy(i)**2)*sign(1.0d0,rannum1-0.5)
 !!$    enddo
-    
+
     do i=1,nmarker !transform to cylindrical coordinates
        vr(i)  =  vx(i)*cos(phi(i))+vy(i)*sin(phi(i))
        vphi(i)= -vx(i)*sin(phi(i))+vy(i)*cos(phi(i))
     enddo
-    !weight0= sum(fusion_rate(:)*vol_int(:))*(dtao*tn)/nmarker
-    weight0= sum(fusion_rate(1:nflux-1)*vol(:))*(dtao*tn)/nmarker
-    !if(myid==0) write(*,*) '*********', weight0*energy(1)*nmarker/(dtao*tn)/10**6*(17.6/3.5)
+    weight0= sum(fusion_rate(1:nflux-1)*vol(:))*n_alpha_per_fusion*(dtao*tn)/nmarker
+    if(myid==0) write(*,*) 'Alpha particle power (Mw)', weight0*sum(energy)/(dtao*tn)/MW
 
     if(myid==0) then
        open(newunit=u,file='alpha_source1.txt')
@@ -13117,6 +13715,7 @@ subroutine magnetic_coordinates_to_cylindrical_coordinates(theta0,radcor0,r,z) !
   call linear_2d_interpolate(mpoloidal,nflux,theta,pfn,r_mag_surf,theta0,radcor0,R)  !uniform 1darray is assumed
   call linear_2d_interpolate(mpoloidal,nflux,theta,pfn,z_mag_surf,theta0,radcor0,Z)  !uniform 1darray is assumed
 end subroutine magnetic_coordinates_to_cylindrical_coordinates
+
 
 
 module icrf_particle_source_mod
@@ -13318,29 +13917,31 @@ program main
   use rmp_3d_field,only: with_rmp
   use trapped_particles,only: ntrapped
   use collision_todo_mod, only : nu_s_func, collision_todo
-  use continuous_injection_mod,only: build_velocity_distribution, build_radial_profile, fast_ion_stored_energy_evolution
+  use continuous_injection_mod,only: build_velocity_distribution, build_radial_profile, build_2d_profile
   use radial_module,only : baxis
   use vcrit_func_mod, only : vcrit_func
   use background_plasma, only: zeff, coulomb_log
   use check_loss, only : check_whether_particle_in_boundary, check_whether_particle_in_boundary3
-  use diagnosis, only: record_markers_at_fixed_time
+  use diagnostic, only: record_markers_at_fixed_time
   use push0_mod, only: push0, push0_2nd_rk,  push0_2nd_rk_optimised,  push0_4th_rk_optimised
   use read_ep_mod, only : read_ep_samplings
   !  use omp_lib !openmp libriary ,do not need including this, and including this causes error when I run this code in my laptop with Debian 8.5 system
   use random_mod, only : random_yj
   use particle_array, only: nmarker_myid,  rg_myid, zg_myid, phig_myid, mu_myid, vpar_myid, vpar_myid_old, energy_myid &
-       & ,lost_myid, thermalized_myid, thermalized_time_myid, lost_time_myid, initialize_particle_array
+       & ,lost_myid, thermalized_myid, thermalized_time_myid, lost_time_myid, initialize_particle_array, vg_phi_myid
   use alpha_particle_source_mod, only : set_alpha_particle_source
   use  icrf_particle_source_mod, only :  set_icrf_particle_source
   use set_te_mod, only : te_func
   use set_ne_mod, only : ne_func
   use ti_module, only : ti_axis
+  use rzphi_grid, only: set_rzphi_grid
+  use passing_trapped_bdry, only : get_passing_trapped_bdry
   implicit none
 
   character(len=100) :: gfile_name,cont_file,file_name1,file_name2
   real(p_):: r0,z0,phi0,mu0, vpar0  !initial conditons of guiding center
   real(p_):: energy0,pitch_angle0 !initial kinetic energy and pitch angle
-  real(p_):: gyro_radius0, rand
+  real(p_):: gyro_radius0, rand, dtao_omega_axis, omega_axis
   integer:: n_tor_period
   integer :: ierr
   integer :: count_thermalized_myid, count_thermalized, count_lost_myid, count_lost
@@ -13358,10 +13959,10 @@ program main
   character(len=100) :: tmp
   namelist /equ_parameters/gfile_name,Ln,Bn
   namelist /control_parameters/FLR_loss,FLR_push, FLR_deposition, mass,charge, zeff, &
-       & nmarker,ep_distribution_type,dtao,kstart,kend, injection_interval, & 
+       & nmarker,ep_distribution_type,dtao_omega_axis,kstart,kend, injection_interval, & 
        & compare_with_nubeam, with_rmp,collision,cal_full_orbit,full_orbit_mover,cal_resonance_contour,loss_bdry,&
        & analyse_field_line, push_full_orbit, ionization_outside_lcfs, profile_reporting_interval
-  namelist /normal_single_orbit/r0,z0,phi0,energy0,pitch_angle0,n_tor_period,check_boundary_loss !r0 and z0 in unit of meter, phi0 in degree, energy0 in keV, pitch_angle0 in degree, dtao in unit 2pi/Omegan, where omegan=bn*charge/mass
+  namelist /normal_single_orbit/r0,z0,phi0,energy0,pitch_angle0,n_tor_period,check_boundary_loss !r0 and z0 in unit of meter, phi0 in degree, energy0 in keV, pitch_angle0 in degree
   namelist /FILD_single_orbit/r0,z0,phi0,gyro_radius0,pitch_angle0,n_tor_period,check_boundary_loss !r0 and z0 in unit of meter, phi0 in degree, energy0 in keV, pitch_angle0 in degree
   namelist /nbi_source_parameters_namelist/phi_direction, rtan_central_beam, r0_source_center, z0_source_center, &
        & phi0_source_center, source_width, source_height, dist_grid_aperture, aperture_half_width,aperture_half_height,&
@@ -13406,34 +14007,39 @@ program main
   CALL SYSTEM_CLOCK(count1, count_rate, count_max)
   call cpu_time(tarray(1))    !cpu_time is a f95 intrinsic subroutine
 
+  
   open(31,file='input.nmlt')
   read(31,nml=equ_parameters)
   close(31)
   if(myid==0) write(*,nml=equ_parameters)
 
   call construct_numerical_tokamak_magnetic_field(gfile_name)
-
+  call set_rzphi_grid()
   !call draw_configuration(r0,z0,pitch_angle0)
 
   open(31,file='input.nmlt')
   read(31, nml=control_parameters)
   close(31)
   if(myid==0)  write(*,nml=control_parameters)
-  if(myid==0)  write(*,*) 'dt*Omega_ep_at_axis=', dtao*abs(baxis)/bn*twopi
 
-  if(with_rmp.eqv..true.) call construct_rmp_field()
-
-  if(analyse_field_line.eqv. .true.)  call field_lines_analyse()
-  !goto 1234
   omegan=bn*charge/mass !cyclotron angular frequency in Hz
   tn=twopi/omegan
   vn=Ln/(tn) !the value of the normalizing velocity in SI unit m/s
   mun=mass*vn**2/Bn
   zf=charge/elementary_charge
+  omega_axis=abs(baxis*charge)/mass
+  dtao = dtao_omega_axis/omega_axis/tn
   if(myid==0)  write(*,*) 'vn (m/s)=', vn, 'tn (s)=', tn, 'dtao(s)=', dtao*tn
+  !if(myid==0)  write(*,*) 'dt*Omega_ep_at_axis=', dtao*abs(baxis)/bn*twopi
 
+  if(with_rmp.eqv..true.) call construct_rmp_field()
 
-!  if(myid==0) call orbit_classification()
+  if(analyse_field_line.eqv. .true.)  call field_lines_analyse()
+  !goto 1234
+
+  call get_passing_trapped_bdry()
+  if(myid==0) call curves_in_pphi_lambda_plane()
+  !call orbit_classification()
 
   ninjection1=nmarker
 
@@ -13683,7 +14289,7 @@ program main
      call set_nbi_source(ninjection1,energy,weight,x,y,zlen, v,vx,vy,vzlen)
      call filter_by_aperture(ninjection1,ninjection2,energy,weight,x,y,zlen,v,vx,vy,vzlen)
      if(myid==0)     write(*,*) 'markers passing through aperture=',ninjection2
-     call neutral_ionization(myid, k,ninjection2,weight,energy,x,y,zlen,v,vx,vy,vzlen, r,z,phi,ionized) !determined whether neutrals are ionized and their ionization locations
+     call neutral_ionization(ninjection2,weight,energy,x,y,zlen,v,vx,vy,vzlen, r,z,phi,ionized) !determined whether neutrals are ionized and their ionization locations
      call select_ionized_neutrals(ninjection2,ninjection3,ionized,r,z,phi, v,vx,vy,vzlen,energy,weight)
 
      if(myid==0)   write(*,*) 'number of neutrals_ionized', ninjection3
@@ -13691,10 +14297,9 @@ program main
      call normalize_guiding_center_variables(ninjection3,rg_add,zg_add,phig_add,mu_add,vpar_add)
      call merge_markers(ninjection3,rg_add,zg_add,phig_add,mu_add,vpar_add, nmarker_selected,rg,zg,phig,mu,vpar)
      if(myid==0) call to_nubeam(nmarker_selected, rg, zg, phig, energy, vpar)
-     if(myid==0)     write(*,*) 'nmarker_selected after marker being merged=', nmarker_selected
-
-     if(myid==0)  write(*,*) 'full-energy particle velocity (10^6m/s)=',sqrt(2*full_energy*kev/mass)/(1d6),&
-          'estimated time of shine-through(s)',2*0.45/sqrt(2*full_energy*kev/mass)
+     if(myid==0) write(*,*) 'nmarker_selected after marker being merged=', nmarker_selected
+     if(myid==0) write(*,*) 'full-energy particle velocity (10^6m/s)=',sqrt(2*full_energy*kev/mass)/(1d6)
+     if(myid==0) write(*,*) 'estimated time of shine-through(s)',(maxval(x_lcfs)-minval(x_lcfs))/sqrt(2*full_energy*kev/mass)
 
   elseif(ep_distribution_type .eq. "from_fusion") then
      call set_alpha_particle_source(nmarker,rg,zg,phig,mu,vpar,energy, weight0)
@@ -13715,12 +14320,12 @@ program main
   if(myid==0)  write(*,*) 'nu_s [Hz]=', nu_s_func(2d19,kev)
   if(myid==0)  write(*,*) 'vcrit energy [kev]', 0.5*mass*(vcrit_func(te_func(0.0d0)*kev))**2/kev
 
-  if(myid==0) write(*,*) 'number of physical particles that a marker represents: ', weight0
+  if(myid==0) write(*,*) 'weight (number of physical particles that a marker represents): ', weight0
   if(myid==0) write(*,*) 'marker number=',nmarker_selected
   total_weight = weight0*nmarker_selected
   total_energy = weight0*sum(energy(1:nmarker_selected))
 
-  if(myid==0) call record_lambda_pphi_for_orbit_classification(nmarker_selected, rg,zg, phig, mu,vpar,energy)
+  if(myid==0) call record_pphi_lambda_for_orbit_classification(nmarker_selected, rg,zg, phig, mu,vpar)
   max_energy = maxval(energy)*1.3 !in Joule, enhanced by a factor to take it into account that energy diffusion can accelerate particles. Used in analysing distribution in veloicty space 
   if(myid==0) call estimate_average_slowing_down_time(nmarker_selected, rg,zg)
 
@@ -13758,14 +14363,14 @@ program main
 !!$           endblock
 !!$        endif
 !!$omp parallel do  !using openmp here can result in race problem in loss_weight
-!     if((myid==0) .and. (mod(k-1,10)==0)) call monitor_orbit()
+     if((myid==0) .and. (mod(k-1,10)==0)) call monitor_orbit()
      do kp = 1, nmarker_myid
         if((lost_myid(kp).eqv..false.) .and. (thermalized_myid(kp).eqv..false.)) &
              & call check_whether_particle_in_boundary(k, dtao, FLR_loss, mu_myid(kp),rg_myid(kp),zg_myid(kp),phig_myid(kp),  &
              & energy_myid(kp), weight0, lost_myid(kp), lost_time_myid(kp), &
              & loss_weight, loss_energy, count_lost_myid, nbdry, rbdry, zbdry) !check the postion of the guiding-center to determine whether it is within the given boundary
         if((lost_myid(kp).eqv..false.) .and. (thermalized_myid(kp).eqv..false.)) &
-             & call push0_4th_rk_optimised(dtao,mu_myid(kp),rg_myid(kp),zg_myid(kp),phig_myid(kp),vpar_myid(kp))
+             & call push0_4th_rk_optimised(dtao,mu_myid(kp),rg_myid(kp),zg_myid(kp),phig_myid(kp),vpar_myid(kp),vg_phi_myid(kp))
         !if((loss(kp).eqv..false.) .and. (collision .eqv. .true.)) call collision_lin(dtao,mu(kp),vpar(kp),rg(kp),zg(kp),phig(kp))
         if((collision .eqv. .true.) .and. (lost_myid(kp).eqv..false.) .and. (thermalized_myid(kp).eqv..false.)) &
              & call collision_todo(k, dtao,mu_myid(kp),vpar_myid(kp),rg_myid(kp),zg_myid(kp),phig_myid(kp),&
@@ -13779,19 +14384,19 @@ program main
         call MPI_Reduce (count_lost_myid, count_lost, 1, MPI_integer, MPI_sum, 0, MPI_COMM_WORLD, ierr)
         call MPI_Reduce (loss_energy, loss_energy_sum, 1, MPI_double, MPI_sum, 0, MPI_COMM_WORLD, ierr)
         call MPI_Reduce (count_thermalized_myid, count_thermalized, 1, MPI_integer, MPI_sum, 0, MPI_COMM_WORLD, ierr)
-        if(myid==0 )  write(uloss, '(i7,9ES14.5)') k, dtao*k, dtao*k*tn, loss_weight, real(count_lost)/nmarker_selected, &
+        if(myid==0 )  write(uloss, '(i8,9ES14.5)') k, dtao*k, dtao*k*tn, loss_weight, real(count_lost)/nmarker_selected, &
              &   loss_energy_sum/total_energy, real(count_thermalized)/nmarker_selected
-        if((myid==0) .and. (k==kend)) write(*,*) 'loss fraction=', real(count_lost)/nmarker_selected, &
-             & 'thermalization fraction=',real(count_thermalized)/nmarker_selected
+        if((myid==0) .and. (k==kend)) write(*,*) 'loss fraction=', real(count_lost)/nmarker_selected
+        if((myid==0) .and. (k==kend)) write(*,*) 'thermalization fraction=',real(count_thermalized)/nmarker_selected
      endif
 
      if ((collision .eqv. .true.) .and. ((mod(k-kstart,injection_interval)==0) .or. (k==kend)) ) then
         call build_velocity_distribution(k, kstart, kend, injection_interval, &
-             & nmarker_myid, lost_myid, thermalized_myid, energy_myid, vpar_myid, rg_myid, zg_myid, weight0) !contribution of particles injected at (kend-k) time step to the distribution at kend time step, energy distribution
-        call build_radial_profile(nmarker_myid, k, kstart, kend, &
-             & lost_myid, thermalized_myid, energy_myid, vpar_myid, vpar_myid_old, mu_myid, rg_myid , zg_myid)
-        ! call fast_ion_stored_energy_evolution(k,kstart, kend, dtao, injection_interval, &
-        !      & nmarker_myid, lost_myid, thermalized_myid, energy_myid)
+             & nmarker_myid, lost_myid, thermalized_myid, energy_myid, vpar_myid, rg_myid, zg_myid, weight0) !contribution of particles injected at (kend-k) time step to the distribution at kend time step
+        !call build_radial_profile(nmarker_myid, k, kstart, kend, &
+        !     & lost_myid, thermalized_myid, energy_myid, vpar_myid, vpar_myid_old, mu_myid, rg_myid , zg_myid, vg_phi_myid)
+        call build_2d_profile(nmarker_myid, k, kstart, kend, &
+             & lost_myid, thermalized_myid,  rg_myid , zg_myid, phig_myid, mu_myid, vpar_myid, energy_myid,vg_phi_myid)
      endif
 
      if(mod(k+1,1000).eq.0) then
@@ -13812,7 +14417,7 @@ program main
   exist_time_av = (thermalized_time_sum+lost_time_sum)/(count_thermalized + count_lost)
   if(myid==0) write(*,*) "average slowed-down time (s) :", thermalized_time_av
   if(myid==0) write(*,*) "average lost_time (s) :", lost_time_av
-  if(myid==0) write(*,*) "average exist time (s) before getting lost or thermalized : ", exist_time_av
+  if(myid==0) write(*,'("average exist time (s) before getting lost or thermalized :",1pe14.5)') exist_time_av
   if(myid==0) call slowing_down_time_profile() !analytical estimation of the slowing-down time (thermalization time)
 !!$     write(*,*) 'prompt ion loss fraction=', loss_weight_sum/total_weight
   call record_markers_at_fixed_time(nmarker_myid,rg_myid,zg_myid,phig_myid,weight0,energy_myid,&
@@ -13849,7 +14454,7 @@ program main
 contains
   subroutine monitor_orbit()
     real(p_) :: energy
-    integer :: jp=2
+    integer :: jp=43
     call get_kinetic_energy(mass, rg_myid(jp),zg_myid(jp),mu_myid(jp),vpar_myid(jp),energy)
     write(unit_tmp,'(20(1pe14.5))') k*dtao*tn, rg_myid(jp), zg_myid(jp), phig_myid(jp), vpar_myid(jp), energy
 
@@ -13891,12 +14496,13 @@ subroutine betaN()
      ne_av = ne_av + vol(i)*ne_func(pfn(i))
      v = v + vol(i)
   enddo
+  write(*,*) 'stored energy of thermal plasma (kJ)=', sum/1000
   av_p=sum/v
   ne_av = ne_av/v
 betat=av_p/(baxis**2/(2*mu0))
   a=(maxval(x_lcfs)-minval(x_lcfs))/2
   write(*,*) 'minor_radius=', a
-  write(*,*) 'average pressure (Mp)=', av_p/10**6
+  write(*,*) 'average pressure (Mp) of thermal plasma=', av_p/10**6
   write(*,*) 'betat=', betat, 'betap=', av_p/(mu0*current**2/(8*pi**2*a**2))
   write(*,*) 'betaN=', 10**8*(a*abs(baxis)/current)*betat
   write(*,*) 'ne/nG=', ne_av/(current/(pi*a**2)*10.**14)
