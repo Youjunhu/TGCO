@@ -2,7 +2,7 @@
   !choose the input G-eqdsk (tokamak equilibrium) file
  !    gfile_name='52340/g052340.03451'
    !gfile_name='gfile/g077759.003400'
-   gfile_name='gfile/g102392.003490'
+   gfile_name='gfile/g101473.04500'
 !  gfile_name='best/gfile_it4505'
   !     gfile_name='best/gfile_it5233'
    ! gfile_name='best/Q5_it14939/gfile'
@@ -13,6 +13,7 @@
   &equilibrium_scaling
   reverse_tf=.false.
   reverse_ip=.true.
+ip_scaling_factor=1.0
   /
 
   
@@ -24,7 +25,7 @@
 !  unit_of_ne=1.0d20 !in unit of 1/m^3, unit_of_ne is the unit used for the elctron number density data stored in density_file
     !  unit_of_ne=1.0d6 !in unit of 1/m^3, unit_of_ne is the unit used for the elctron number density data stored in density_file
       !      unit_of_ne=1.0d19 !in unit of 1/m^3, unit_of_ne is the unit used for the elctron number density data stored in density_file
-       unit_of_ne=1.0d19 !in unit of 1/m^3, unit_of_ne is the unit used for the elctron number density data stored in density_file
+       unit_of_ne=1.0d6 !in unit of 1/m^3, unit_of_ne is the unit used for the elctron number density data stored in density_file
   ne_prof_rc_type="toroidal-flux-sqrt"
   !ne_prof_rc_type="poloidal-flux"
 !ne_prof_rc_type="poloidal-flux-sqrt"
@@ -55,7 +56,7 @@
 
 
   &control_parameters
-  nmarker=20000
+  nmarker=100000
   !mass=1.6726d-27 !particle mass in kg 
   mass=3.3452d-27 !particle mass in kg (mass=2._p_*1.6726d-27 is for Deuterium, mass=9.1094d-31 is for electron)
   !mass=5.0178d-27
@@ -68,16 +69,16 @@
   !ep_distribution_type="from_fusion"
   ep_distribution_type="from_nbi"
   ionization_outside_lcfs = .false.
-  FLR_loss=.false.
+  FLR_loss=.true.
   FLR_push=.false.
-  FLR_deposition=.false.
+  FLR_deposition=.true.
   push_full_orbit=.false.
-  dtao=0.35d0 !time step, in unit 2pi/Omegan, where omegan=bn*charge/mass
+  dtao_omega_axis=6.0d0 !time step, in unit 2pi/Omegan, where omegan=bn*charge/mass
   kstart=0
-  kend=100
-  injection_interval=100 !nbi time-step = injection_interval*dtao
-  profile_reporting_interval=100
-  zeff=1.0d0
+  kend=0
+  injection_interval=1000 !nbi time-step = injection_interval*dtao
+  profile_reporting_interval=100000
+  zeff=2.23d0
   with_rmp=.false.
   collision=.true.
   cal_full_orbit=.false. ! an example full orbit
@@ -98,7 +99,7 @@ max_npt_along_field_line=500000
 
 &nbi_source_parameters_namelist
   phi_direction = 1.0 !+1 for injection in +phi direction, and -1 for injection in -phi direction
-  rtan_central_beam=1.141d0 !, rtan=0.731, 1.26,1.141, 0.606 !in unit of meter, !rtan is the tangent radius of a beam line
+  rtan_central_beam=1.26d0 !, rtan=0.731, 1.26,1.141, 0.606 !in unit of meter, !rtan is the tangent radius of a beam line
 !  zelevation_central_beam=0.0d0 !in unit of meter
   r0_source_center=9.122635693701684 !in unit of meter
   z0_source_center=0.0d0 !in unit of meter
@@ -120,7 +121,7 @@ vertical_divergence_angle=2.10d-2   !unit rad
 !horizontal_divergence_angle=0.0083775802666667 !unit rad
 !vertical_divergence_angle=0.016057028844444 !unit rad
   
-  full_energy=55d0 !in unit of keV
+  full_energy=65d0 !in unit of keV
   full_energy_fraction=0.8
   half_energy_fraction=0.14
 !  full_energy_fraction=1.0
@@ -136,15 +137,17 @@ aperture_half_height=0.45d0 !meter, if no filtering, set this value to a large n
   /
 
 
+
+
    &rmp
     read_or_calculate_rmp="calculate"
   !  read_or_calculate_rmp="read"
   !  rmp_file="/home/yj/tmp/maps_B_0830.txt"
   rmp_file="rmpdata/dB1P_0"
   !rmp_file="rmpdata/dB1V_0"
-  rmp_current_amplitude=10000.d0  !in uint of Ampere, !for EAST maximum current 2.5kA/turn (total 4 turns)
+  rmp_current_amplitude=20000.d0  !in uint of Ampere, !for EAST maximum current 2.5kA/turn (total 4 turns)
   rmp_nh=1
-  upp_down_phase=0 !chosen among integer values: 0--8/rmp_nh
+  upp_down_phase=5 !chosen among integer values: 0--8/rmp_nh
   phishift_user=0  !chosen among integer values: 0--8
   filtering_rmp=.true.
   nx=129
