@@ -1,0 +1,161 @@
+  &equ_parameters
+  !choose the input G-eqdsk (tokamak equilibrium) file
+  gfile_name='gfile'
+  reverse_tf=.true.
+  reverse_ip=.true.
+  ip_scaling_factor=1.0
+  /
+
+  
+  &ne_profile
+      ne_file="ne.dat" 
+  unit_of_ne=1.0d20 !in unit of 1/m^3, unit_of_ne is the unit used for the elctron number density data stored in density_file
+  ne_prof_rc_type="poloidal-flux"
+  /
+
+
+  &te_profile
+  te_file="te.dat" 
+  unit_of_te=1.6022d-16 !this is kev in unit of Joule, unit_of_te is the unit used for the temperature data stored in te_file
+  te_prof_rc_type="poloidal-flux"
+  /
+
+  &ti_profile
+  ti_file="ti.dat" 
+  unit_of_ti=1.6022d-16 !this is kev in unit of Joule, unit_of_ti is the unit used for the temperature data stored in ti_file
+  ti_prof_rc_type="poloidal-flux"
+  /
+
+
+  &control_parameters
+  nmarker=10000
+  !mass=5.0178d-27
+  mass=6.64465723d-27 ! alpha particle mass
+  !charge=1.6022d-19 !the charge of the particle in unit of Coulomb
+  charge=3.2044d-19 !alpha particle charge
+  ep_distribution_type="from_fusion"
+  !ep_distribution_type="from_nbi"
+  fusion_type="thermal_DT"
+  !fusion_type="thermal_PB"
+  !fusion_type="beam_target_PB"
+  push_full_orbit=.false.
+ dt_omega_axis=2.0d0 !time step
+  kstart=0
+  kend=1
+  profile_reporting_interval=50000
+  zeff=1.0d0
+  collision=.false.
+  cal_full_orbit=.false. ! an example full orbit
+  full_orbit_mover="boris" !choose "rk4"or " boris"
+  cal_resonance_contour=.false.
+  loss_bdry='lcfs' !choose among "lcfs", "limiter", "user_provide"
+  loss_bdry_fn='first_wall.txt' !boundary provided by the user
+  loss_bdry_axisymmetry= .true.
+  nbdry=110
+  nbdry_phi=50
+analyse_field_line=.false.
+compare_with_nubeam=.false.
+  /
+
+&field_line_tracing_nl
+krad=250
+npt_tor=35
+n_tor_loop=301
+max_npt_along_field_line=500000
+/
+
+
+  &nbi_namelist
+  ionization_outside_lcfs = .false.
+  phi_direction = -1.0 !+1 for injection in +phi direction, and -1 for injection in -phi direction
+  rtan_central_beam=0.8d0 !, rtan=0.731, 1.26,1.141, 0.606 !in unit of meter, !rtan is the tangent radius of a beam line
+!  zelevation_central_beam=0.0d0 !in unit of meter
+  r0_source_center=10.098 !in unit of meter
+  z0_source_center=0.6d0 !in unit of meter
+  phi0_source_center=0.0d0 !in unit of radius
+plate_angle=3.3 !degree
+  source_height=0.44d0 !in unit of meter
+  source_width=0.23d0  !in unit of meter
+!  source_width=0.46d0  !in unit of meter
+!  source_height=0.9d0 !in unit of meter
+
+
+vertical_focal_length= 6.283  !meter
+horizontal_focal_length= 6.15 !meter
+
+!source_focus_angle= 0.012d0 !unit rad, !0.012d0 is obtained by assuming Fc=10m and the two halves of the exit grid are tilted to each other, =asin(source_height/four/Fc);
+
+
+!!$vertical_divergence_angle=0.02094 !unit rad
+!!$horizontal_divergence_angle=0.02094 !unit rad
+vertical_divergence_angle=0.0 !unit rad
+horizontal_divergence_angle=0.0 !unit rad
+
+!horizontal_divergence_angle=0.0083775802666667 !unit rad
+!vertical_divergence_angle=0.016057028844444 !unit rad
+!  	horizontal_divergence_angle=0.02d-2 !unit rad
+!	vertical_divergence_angle=0.02d-2   !unit rad
+  full_energy=200d0 !in unit of keV
+  full_energy_fraction=1.0
+  half_energy_fraction=0.0
+!  full_energy_fraction=1.0
+!  half_energy_fraction=0.0
+
+  nbi_power=1.d6 !in unit of watta, beam power after neutralization, not the source power
+
+
+dist_grid_aperture=0.01d0 !meter
+aperture_half_width=300.23d0 !meter, if no filtering, set this value to a large number
+aperture_half_height=3000.45d0 !meter, if no filtering, set this value to a large number
+
+  /
+
+
+   &rmp
+  !  read_or_calculate_rmp="calculate"
+    read_or_calculate_rmp="read"
+  !  rmp_file="/home/yj/tmp/maps_B_0830.txt"
+  rmp_file="rmpdata/dB1P_0"
+  !rmp_file="rmpdata/dB1V_0"
+  rmp_current_amplitude=10000.d0  !in uint of Ampere, !for EAST maximum current 2.5kA/turn (total 4 turns)
+  rmp_nh=1
+  upp_down_phase=0 !chosen among integer values: 0--8/rmp_nh
+  phishift_user=0  !chosen among integer values: 0--8
+  filtering_rmp=.true.
+!!$  nx=300
+!!$  nz=520
+  nphi=129
+ ! rmin=1.2
+  ! rmax=2.6
+  !zmin=-1.2
+  !zmax= 1.2
+  rmin=2.4
+  rmax=5.1
+  zmin=-2.6
+  zmax= 2.6
+  phimin=0.
+  phimax=6.2831852
+  /
+
+  &normal_single_orbit
+  r0=2.15d0 !unit meter
+  z0=0.0d0  !unit meter
+  phi0=0.d0 !inital toroidal angle (in unit of degree), phi0 is usually zero
+  energy0=2 !unit keV
+  pitch_angle0=115.  !in unit of degree, the range of pitch_angle is [0:180]
+  check_boundary_loss=.true.
+  n_tor_period=0
+  /
+
+  &FILD_single_orbit
+  r0=2.35d0 !unit meter
+  z0=0.d0  !unit meter, 
+  phi0=0.d0 !inital toroidal angle (in unit of degree), phi0 is usually zero
+  gyro_radius0=1.0d-2   !in unit of meter
+  pitch_angle0=80.0d0  !in unit of degree, the range of pitch_angle is [0:180]
+  check_boundary_loss=.true.
+  n_tor_period=1
+  /
+
+
+
